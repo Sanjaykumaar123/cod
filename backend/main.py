@@ -43,6 +43,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Startup database initialization & seeding
+@app.on_event("startup")
+def startup_db_init():
+    from backend.database import Base, engine, SessionLocal
+    from backend.models import User
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        user_exists = db.query(User).first()
+        if not user_exists:
+            print("Production database empty. Running initial seed...")
+            from backend.init_db import seed_db
+            seed_db()
+    except Exception as e:
+        print(f"Startup database check error: {e}")
+    finally:
+        db.close()
+
 # Initialize Vision Engine
 vision_engine = VisionEngine()
 
