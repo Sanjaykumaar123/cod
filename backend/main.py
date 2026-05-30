@@ -64,6 +64,11 @@ def startup_db_init():
 # Initialize Vision Engine
 vision_engine = VisionEngine()
 
+@app.get("/")
+@app.get("/healthz")
+def health_check():
+    return {"status": "healthy", "service": "BlindWatch AI OS"}
+
 # --- AUTH ENDPOINTS ---
 
 @app.post("/api/auth/token", response_model=schemas.Token)
