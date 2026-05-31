@@ -17,33 +17,35 @@ app.add_middleware(
 )
 
 SERVICES = {
-    "/api/v1/auth": "http://127.0.0.1:8001",
-    "/api/v1/users": "http://127.0.0.1:8001",
-    "/api/v1/cameras": "http://127.0.0.1:8002",
-    "/api/v1/live-feed": "http://127.0.0.1:8003",
-    "/api/v1/entities": "http://127.0.0.1:8003",
-    "/api/v1/events": "http://127.0.0.1:8005",
-    "/api/v1/evidence": "http://127.0.0.1:8005",
-    "/api/v1/privacy": "http://127.0.0.1:8004",
+    "/api/v1/auth":              "http://127.0.0.1:8001",
+    "/api/v1/users":             "http://127.0.0.1:8001",
+    "/api/v1/cameras":           "http://127.0.0.1:8002",
+    "/api/v1/live-feed":         "http://127.0.0.1:8003",
+    "/api/v1/entities":          "http://127.0.0.1:8003",
+    "/api/v1/vision":            "http://127.0.0.1:8003",
+    "/api/v1/events":            "http://127.0.0.1:8005",
+    "/api/v1/evidence":          "http://127.0.0.1:8005",
+    "/api/v1/privacy":           "http://127.0.0.1:8004",
     "/api/v1/identity-requests": "http://127.0.0.1:8009",
-    "/api/v1/audit": "http://127.0.0.1:8006",
-    "/api/v1/analytics": "http://127.0.0.1:8007",
-    "/api/v1/simulator": "http://127.0.0.1:8008",
-    "/api/v1/reports": "http://127.0.0.1:8007",
-    "/api/v1/notifications": "http://127.0.0.1:8001",
-    "/healthz": "http://127.0.0.1:8001"
+    "/api/v1/audit":             "http://127.0.0.1:8006",
+    "/api/v1/analytics":         "http://127.0.0.1:8007",
+    "/api/v1/simulator":         "http://127.0.0.1:8008",
+    "/api/v1/reports":           "http://127.0.0.1:8007",
+    "/api/v1/notifications":     "http://127.0.0.1:8001",
+    "/healthz":                  "http://127.0.0.1:8001"
 }
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_request(request: Request, path: str):
     # Match request path to respective service URL
     full_path = f"/{path}"
-    target_service_url = None
-    
-    for prefix, service_url in SERVICES.items():
-        if full_path.startswith(prefix):
-            target_service_url = service_url
-            break
+    if "/identity" in full_path:
+        target_service_url = "http://127.0.0.1:8009"
+    else:
+        for prefix, service_url in SERVICES.items():
+            if full_path.startswith(prefix):
+                target_service_url = service_url
+                break
             
     if not target_service_url:
         raise HTTPException(status_code=404, detail="Service route not resolved")

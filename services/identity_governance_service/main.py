@@ -302,7 +302,29 @@ def approve_identity_request(request_id: str, db: Session = Depends(get_db), cla
 def reject_identity_request(request_id: str, payload: dict, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
     return auditor_reject_v1(request_id, db, claims)
 
+@app.get("/api/v1/entities/{entity_id}/identity")
+@app.get("/api/entities/{entity_id}/identity")
+def get_decrypted_identity(entity_id: str, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    tenant_id = claims.get("tenant_id", "default")
+    # Find approved request for this entity
+    req = db.query(IdentityRequest).filter(
+        IdentityRequest.entity_id == entity_id,
+        IdentityRequest.status == "approved",
+        IdentityRequest.tenant_id == tenant_id
+    ).first()
+    if req and req.decrypted_identity:
+        return {
+            "permitted": True,
+            "decrypted_identity": req.decrypted_identity,
+            "expires_in_seconds": 1800
+        }
+    return {
+        "permitted": False,
+        "decrypted_identity": "Dual approval required to reveal identity."
+    }
+
 @app.get("/healthz")
 def healthz():
     return {"status": "healthy", "service": "identity_governance_service"}
+
 

@@ -143,3 +143,8 @@ def download_report(db: Session = Depends(get_db), claims: dict = Depends(get_cu
         "cryptographic_ledger_signature": "SHA-256 Chain Signed Node:01",
         "officer_in_charge": claims.get("sub", "auditor")
     }
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "healthy", "service": "analytics_service"}
+

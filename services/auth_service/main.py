@@ -166,8 +166,11 @@ def login_v1(payload: LoginPayload, db: Session = Depends(get_db)):
     return {
         "access_token": token,
         "refresh_token": token,
-        "role": role_name
+        "role": role_name,
+        "username": user.username,
+        "full_name": user.full_name
     }
+
 
 @app.post("/api/v1/auth/refresh")
 def refresh_v1(claims: User = Depends(get_current_user)):

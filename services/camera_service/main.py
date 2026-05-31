@@ -210,8 +210,10 @@ def test_camera_v1(id: str, db: Session = Depends(get_db), claims: dict = Depend
 
 # Keep toggle for compatibility
 @app.put("/api/cameras/{camera_id}/privacy-shield")
+@app.put("/api/v1/cameras/{camera_id}/privacy-shield")
 def toggle_privacy_shield(camera_id: str, active: bool, db: Session = Depends(get_db), claims: dict = Depends(RoleChecker(["admin", "officer", "auditor"]))):
     tenant_id = claims.get("tenant_id", "default")
+
     cam = db.query(Camera).filter(Camera.id == camera_id, Camera.tenant_id == tenant_id).first()
     if not cam:
         raise HTTPException(status_code=404, detail="Camera not found")

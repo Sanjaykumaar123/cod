@@ -65,86 +65,102 @@ from services.privacy_service.infrastructure.models import PrivacyScore, Complia
 @app.get("/api/v1/privacy/dashboard")
 def get_privacy_dashboard_v1(db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
     tenant_id = claims.get("tenant_id", "default")
+
+    from services.vision_service.engines.privacy_engine import PrivacyScoreEngine, ComplianceEngine, TrustEngine
+
     cameras = db.query(Camera).filter(Camera.tenant_id == tenant_id).all()
-    shield_count = sum(1 for c in cameras if c.privacy_shield_active)
+    shield_count  = sum(1 for c in cameras if c.privacy_shield_active)
     total_cameras = len(cameras) or 1
-    
-    base_privacy = 70.0 + (shield_count / total_cameras) * 30.0
-    base_compliance = 90.0 + (shield_count / total_cameras) * 10.0
-    
-    score_rec = db.query(PrivacyScore).filter(PrivacyScore.tenant_id == tenant_id).order_by(PrivacyScore.id.desc()).first()
-    privacy_score_val = score_rec.privacy_score if score_rec else round(base_privacy, 1)
+
+    # Derive config from camera shield state (approximation when no policy store exists)
+    identity_collection = "anonymized_only" if shield_count == total_cameras else "stored_by_default"
+    retention_days      = 7  # default governance policy
+
+    priv_result  = PrivacyScoreEngine.calculate(identity_collection=identity_collection, retention_days=retention_days)
+    comp_result  = ComplianceEngine.check(identity_collection=identity_collection, retention_days=retention_days)
+    trust_score  = TrustEngine.calculate(priv_result["privacy_score"], comp_result["compliance_score"])
+
+    # Store snapshot for history charting
+    pm = PrivacyMetric(
+        privacy_score       = priv_result["privacy_score"],
+        compliance_score    = comp_result["compliance_score"],
+        transparency_score  = 97.5,
+        retention_risk      = priv_result["risk_level"],
+        exposure_risk       = priv_result["risk_level"],
+        active_anonymous_count = random.randint(5, 12),
+        requests_denied     = 2,
+        requests_approved   = 1,
+        tenant_id           = tenant_id,
+    )
+    db.add(pm)
+    db.commit()
 
     return {
-        "privacy_score": privacy_score_val,
-        "risk": "LOW" if privacy_score_val > 80 else ("MEDIUM" if privacy_score_val > 50 else "HIGH"),
-        "compliance_score": round(base_compliance, 1),
-        "transparency_score": 97.5,
-        "active_anonymous_count": random.randint(5, 12),
-        "requests_denied": 2,
-        "requests_approved": 1
+        "privacy_score":       priv_result["privacy_score"],
+        "risk":                priv_result["risk_level"],
+        "compliance_score":    comp_result["compliance_score"],
+        "trust_score":         trust_score,
+        "transparency_score":  97.5,
+        "active_anonymous_count": pm.active_anonymous_count,
+        "requests_denied":     2,
+        "requests_approved":   1,
+        "breakdown":           priv_result["breakdown"],
+        "compliance_per_regulation": comp_result["per_regulation"],
     }
 
 @app.post("/api/v1/privacy/assessment")
 def run_privacy_assessment_v1(db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
     tenant_id = claims.get("tenant_id", "default")
-    user_id = claims.get("user_id")
-    
-    # 1. Analyze policies
+    user_id   = claims.get("user_id")
+
+    from services.vision_service.engines.privacy_engine import PrivacyScoreEngine, ComplianceEngine, TrustEngine
+
     cameras = db.query(Camera).filter(Camera.tenant_id == tenant_id).all()
-    unshielded_count = sum(1 for c in cameras if not c.privacy_shield_active)
-    
-    # 2. Calculate scores
-    tracking_penalty = unshielded_count * 15.0
-    retention_penalty = 5.0
-    sharing_penalty = 0.0
-    identity_storage_penalty = 0.0
-    
-    calculated_score = max(100.0 - (tracking_penalty + retention_penalty + sharing_penalty + identity_storage_penalty), 10.0)
-    
-    # 3. Store snapshot
+    shield_count  = sum(1 for c in cameras if c.privacy_shield_active)
+    total_cameras = len(cameras) or 1
+
+    identity_collection = "anonymized_only" if shield_count == total_cameras else "stored_by_default"
+    retention_days      = 7
+
+    priv_result  = PrivacyScoreEngine.calculate(identity_collection=identity_collection, retention_days=retention_days)
+    comp_result  = ComplianceEngine.check(identity_collection=identity_collection, retention_days=retention_days)
+    trust_score  = TrustEngine.calculate(priv_result["privacy_score"], comp_result["compliance_score"])
+    bdown        = priv_result["breakdown"]
+
     snapshot = PrivacyScore(
-        privacy_score=calculated_score,
-        identity_storage_penalty=identity_storage_penalty,
-        retention_penalty=retention_penalty,
-        sharing_penalty=sharing_penalty,
-        tracking_penalty=tracking_penalty,
-        tenant_id=tenant_id
+        privacy_score            = priv_result["privacy_score"],
+        identity_storage_penalty = bdown["identity_penalty"],
+        retention_penalty        = bdown["retention_penalty"],
+        sharing_penalty          = bdown["sharing_penalty"],
+        tracking_penalty         = bdown["tracking_penalty"],
+        tenant_id                = tenant_id,
     )
     db.add(snapshot)
-    
-    pm = PrivacyMetric(
-        privacy_score=calculated_score,
-        compliance_score=max(100.0 - tracking_penalty, 50.0),
-        transparency_score=98.0,
-        retention_risk="Low" if retention_penalty < 10 else "Medium",
-        exposure_risk="Low" if tracking_penalty < 20 else "Medium",
-        active_anonymous_count=random.randint(4, 15),
-        tenant_id=tenant_id
-    )
-    db.add(pm)
     db.commit()
     db.refresh(snapshot)
-    
+
     from services.shared.database import log_audit_event
-    log_audit_event(db, user_id, tenant_id, "privacy.assessment", "PrivacyScore", snapshot.id, f"Executed automated privacy assessment. Score: {calculated_score}")
-    
-    # 4. Return Report
+    log_audit_event(db, user_id, tenant_id, "privacy.assessment", "PrivacyScore", snapshot.id,
+                    f"Automated privacy assessment. Score: {priv_result['privacy_score']}")
+
+    recommendations = []
+    if identity_collection != "anonymized_only":
+        recommendations.append("Switch to anonymized-only mode to gain +25 privacy points.")
+    recommendations.append("Enable privacy shield on all camera nodes to maximise anonymization.")
+    if comp_result["findings"]:
+        recommendations += comp_result["findings"]
+
     return {
-        "assessment_id": str(snapshot.id),
-        "privacy_score": calculated_score,
-        "risk_level": "LOW" if calculated_score > 80 else ("MEDIUM" if calculated_score > 50 else "HIGH"),
-        "penalties": {
-            "tracking": tracking_penalty,
-            "retention": retention_penalty,
-            "sharing": sharing_penalty,
-            "identity_storage": identity_storage_penalty
-        },
-        "recommendations": [
-            "Enable privacy shield mapping on unshielded camera nodes.",
-            "Enforce GDPR automated log retention constraints."
-        ]
+        "assessment_id":       str(snapshot.id),
+        "privacy_score":       priv_result["privacy_score"],
+        "compliance_score":    comp_result["compliance_score"],
+        "trust_score":         trust_score,
+        "risk_level":          priv_result["risk_level"],
+        "penalties":           bdown,
+        "compliance_findings": comp_result["findings"],
+        "recommendations":     recommendations,
     }
+
 
 @app.get("/api/v1/privacy/exposure-risks")
 def get_exposure_risks_v1(db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):

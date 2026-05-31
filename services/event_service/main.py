@@ -151,15 +151,23 @@ def explain_event_v1(id: str, db: Session = Depends(get_db), claims: dict = Depe
     evt = db.query(Event).filter(Event.id == id, Event.tenant_id == tenant_id).first()
     if not evt:
         raise HTTPException(status_code=404, detail="Event not found")
-        
+
+    from services.vision_service.engines.threat_engine import ExplainableAIEngine
+    explanation = ExplainableAIEngine.explain(
+        event_type  = getattr(evt, "event_type", "UNKNOWN"),
+        risk_score  = float(getattr(evt, "risk_score", 0.0)),
+    )
+
     return {
-        "event_id": str(evt.id),
-        "reasons": [
-            {"reason": "Restricted Zone Entry", "weight": 42},
-            {"reason": "Movement Pace Abnormality", "weight": 25},
-            {"reason": "Low Visibility Sector", "weight": 12}
-        ]
+        "event_id":   str(evt.id),
+        "event_type": evt.event_type,
+        "risk_score": evt.risk_score,
+        "reasons":    explanation["factors"],
+        "summary":    explanation["summary"],
+        "model":      explanation["model"],
+        "privacy_note": explanation["privacy_note"],
     }
+
 
 # Keep legacy routes for backward compatibility
 @app.get("/api/events")
