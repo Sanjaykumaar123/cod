@@ -87,17 +87,21 @@ def startup_seed():
                 ("viewer", "viewer123", "viewer@blindwatch.ai", viewer_role, "Executive Observer")
             ]
             
-            for username, pwd, email, role, name in users_data:
+            for username, password, email, role, full_name in users_data:
                 user = User(
                     username=username,
                     email=email,
-                    hashed_password=get_password_hash(pwd),
-                    full_name=name,
-                    is_active=True,
+                    hashed_password=get_password_hash(password),
+                    full_name=full_name,
+                    role_id=str(role.id),
                     tenant_id="default"
                 )
-                user.roles.append(role)
                 db.add(user)
+            db.commit()
+            print("Finished seeding default users.")
+        else:
+            # Force fix any existing users that might have random tenant IDs
+            db.query(User).filter(User.tenant_id != "default").update({"tenant_id": "default"})
             db.commit()
             print("Modular db seeding complete.")
     finally:
