@@ -22,17 +22,24 @@ import numpy as np
 from typing import Dict, List, Optional, Callable, Tuple
 
 # ── Optional heavy imports ─────────────────────────────────────────────────────
+import os
+
 try:
+    if os.environ.get("RENDER") or os.environ.get("DISABLE_HEAVY_CV"):
+        raise ImportError("Cloud environment detected - skipping CV2 to prevent OOM")
     import cv2
     CV2_AVAILABLE = True
 except ImportError:
     CV2_AVAILABLE = False
 
 try:
+    if os.environ.get("RENDER") or os.environ.get("DISABLE_HEAVY_CV"):
+        raise ImportError("Cloud environment detected - skipping YOLO to prevent OOM")
     from ultralytics import YOLO as _YOLO
     YOLO_AVAILABLE = True
 except ImportError:
     YOLO_AVAILABLE = False
+
 
 # ── Detected class constants ───────────────────────────────────────────────────
 DETECTABLE_CLASSES = {

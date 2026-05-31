@@ -37,7 +37,7 @@ def get_current_user_claims(token: str = Depends(oauth2_scheme)) -> dict:
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token claims")
 
-@app.get("/api/analytics")
+@app.get("/api/v1/analytics/dashboard")
 def get_analytics(db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
     tenant_id = claims.get("tenant_id", "default")
     
