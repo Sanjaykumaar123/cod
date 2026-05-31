@@ -64,6 +64,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 @app.on_event("startup")
 def startup_seed():
     # Make sure tables are created
+    Base.metadata.create_all(bind=engine)
 
     db = SessionLocal()
     try:
