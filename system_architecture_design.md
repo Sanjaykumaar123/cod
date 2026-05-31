@@ -504,3 +504,205 @@ This section details the REST API endpoints and direct user interface button map
 * **`WS /ws/alerts`**: Push urgent alerts.
 * **`WS /ws/live-feed`**: Bounding box coordinates.
 
+---
+
+## 12. Volume 4: Complete Page-by-Page Frontend Specification
+
+This section details the frontend specification for the BlindWatch AI platform. Designed as a production-grade enterprise security dashboard rather than a standard admin console, the UI draws inspiration from Palantir Gotham, CrowdStrike Falcon, Anduril Lattice, and Datadog.
+
+### Theme & Design Aesthetics
+* **Theme**: Sleek Dark Theme, rich HSL tailored color palette.
+* **Styling**: Glassmorphism (`backdrop-filter: blur()`), glowing borders, smooth micro-animations, and dynamic transitions.
+* **Global States**: Every page natively supports Loading, Empty, Error, and Success states.
+* **Action Lifecycle**:
+  ```
+  User Action (Button/Input)
+  ↓
+  API Route Call (/api/v1/...)
+  ↓
+  Database Transaction (Atomic SQL)
+  ↓
+  Audit Trail Logged (Cryptographic Chain)
+  ↓
+  UI State Hot-Refresh
+  ```
+
+### Page Specifications
+
+#### Page 1: Login Page
+* **URL**: `/auth/login`
+* **Components**:
+  * **Brand Logo**: BlindWatch AI (sleek SVG logo mark).
+  * **Email & Password Input Fields** with inline validators.
+  * **Remember Me**: Custom styled checkbox.
+  * **Login Button**: Triggers `POST /api/v1/auth/login`.
+* **State Outcomes**:
+  * *Success*: JWT session saved, redirect to `/dashboard`.
+  * *Failure*: Toast alert ("Invalid Credentials").
+  * *Forgot Password*: Accessible via modal request form.
+
+#### Page 2: Enterprise Dashboard
+* **URL**: `/dashboard`
+* **Purpose**: Real-time visual posture of globally tracked cameras, threats, and privacy indexes.
+* **Top Metric Cards** (sourced from `GET /api/v1/analytics/dashboard`):
+  1. **Active Cameras Count**
+  2. **Active Anonymous Entities**
+  3. **Threat Alerts Today**
+  4. **Dynamic Privacy Score**
+  5. **Pending Identity Reveals**
+  6. **Compliance Posture Index**
+* **Live Interactive Widgets**:
+  * **Real-time Threat Trend Chart**: Chronological feed connected to `WS /ws/dashboard`.
+  * **Camera Health Topology Map**: Interactive camera nodes colored dynamically (Green: Active, Yellow: Warning, Red: Offline).
+  * **Privacy Trend Graph**: Interactive SVG line chart rendering data of the last 30 days.
+  * **Recent Events Grid**:
+    * Columns: `Event`, `Severity`, `Risk`, `Status`, `Time`.
+    * Interaction: Click row to slide open detailed Event Panel drawer.
+
+#### Page 3: Live Monitoring Surveillance Grid
+* **URL**: `/live-monitoring`
+* **Purpose**: Low-latency video feeds and anonymization monitoring.
+* **Layout Grid**: Layout switcher supporting `4`, `8`, `16`, or `32` simultaneous streams.
+* **Feed Cards**:
+  * Contains: Camera Name, Online Status, FPS Counter, Entity Count.
+  * Canvas Overlay: Displays anonymized bounding boxes with random Entity ID (e.g. `ENT_93A7`) and risk metrics.
+  * Interaction Controls:
+    * **Fullscreen**: Opens video viewport to maximum resolution.
+    * **Pause Feed**: Stops rendering frame buffers (saves local resources).
+    * **Capture Snapshot**: Triggers `POST /api/v1/camera/snapshot` to create evidence record.
+    * **Camera Details**: Opens right-aligned inspection drawer showing metrics.
+
+#### Page 4: Camera Management Node Manager
+* **URL**: `/cameras`
+* **Table**:
+  * Columns: `Name`, `Type`, `Location`, `Health Score`, `Status`, `Actions`.
+* **Action Triggers**:
+  * **Add Camera Modal**: Dialog with fields for Name, Location, Camera Type, and Stream URL. Triggers `POST /api/v1/cameras`.
+  * **Test Connection**: Triggers `POST /api/v1/cameras/{id}/test` to display success/failure indicator.
+  * **Edit Configuration**: Modals targeting properties. Triggers `PUT /api/v1/cameras/{id}`.
+  * **Delete Node**: Confirms soft deletion of the camera node. Triggers `DELETE /api/v1/cameras/{id}`.
+
+#### Page 5: Events Center Alert Hub
+* **URL**: `/events`
+* **Main Table**:
+  * Columns: `Event ID`, `Type`, `Risk Score`, `Confidence Level`, `Status`, `Time`.
+  * Filter Panels: Date Range, Severity Level, Event Type, Resolution Status.
+* **Action Triggers**:
+  * **View Event Details**: Navigates user to corresponding `/events/{id}` page.
+  * **Escalate**: Triggers `POST /api/v1/events/{id}/escalate`.
+  * **Dismiss Alert**: Triggers `POST /api/v1/events/{id}/dismiss` to flag false positive.
+  * **Generate Report**: Triggers `POST /api/v1/reports/generate`.
+
+#### Page 6: Event Details Panel
+* **URL**: `/events/{id}`
+* **Content Sections**:
+  * **Event Summary**: Main parameters, telemetry data, and location map.
+  * **Lifecycle Timeline**: Chronological event logs.
+  * **Evidence Gallery**: Image frame buffers, raw video loops, and captured snapshots.
+  * **AI Explanation Dashboard**: Displays feature weights (e.g. Zone violation: 42%, Speed: 25%) mapping output of `GET /api/v1/events/{id}/explanation`.
+  * **Entity Path Timeline**: Historical movement profile of coordinates for the anonymous subject.
+* **Action Triggers**:
+  * **Explain Decision**: Refreshes XAI visualization cards.
+  * **Request Identity**: Opens overlay dialog requesting dual-key authorization to reveal subject's identity (`POST /api/v1/identity-requests`).
+
+#### Page 7: Identity Reveal Governance
+* **URL**: `/identity-requests`
+* **Request Queue Table**:
+  * Columns: `Request ID`, `Case Number`, `Requesting Officer`, `Status`, `Created At`.
+* **Request Detail View**: Shows justification text, event details, and evidence attachments.
+* **Dual Approval Action Triggers**:
+  * **Auditor Approve / Reject**: Triggers `POST /api/v1/identity-requests/{id}/auditor-approve` or `/auditor-reject` (Auditor role only).
+  * **Admin Approve / Reject**: Triggers `POST /api/v1/identity-requests/{id}/admin-approve` (Admin role only).
+
+#### Page 8: Privacy Center Posture Dashboard
+* **URL**: `/privacy`
+* **Hero Metrics**: Large digital scores representing Privacy, Trust, Exposure, and Compliance indexes.
+* **Interactive Visualization Widgets**:
+  * **Privacy Radar Chart**: Slices scores across retention, sharing, and tracking factors.
+  * **Exposure Breakdown Bar Chart**: Visualizes potential identity leak paths.
+  * **GDPR Retention Impact Graph**: Computes optimization curves.
+  * **Spatial Risk Heatmap**: Tracks location risks.
+* **Action Triggers**:
+  * **Run Assessment**: Triggers `POST /api/v1/privacy/assessment` to calculate values.
+  * **Generate Compliance Report**: Triggers `POST /api/v1/reports/compliance`.
+
+#### Page 9: Cryptographic Audit Ledger
+* **URL**: `/audit`
+* **Purpose**: System-wide ledger listing every single transaction.
+* **Table**:
+  * Columns: `User`, `Action`, `Target Resource`, `Timestamp`, `Transaction Result`.
+  * Filters: Date range picker, Actor username, Action type.
+  * Interaction: Click row to reveal raw block details (including current SHA-256 block hash and link to previous block hash).
+
+#### Page 10: Analytics Center Business Intelligence
+* **URL**: `/analytics`
+* **Interactive Chart Sections**:
+  * **Threat Trends Over Time** (interactive line chart)
+  * **High-Risk Spatial Areas** (dynamic bar/pie chart)
+  * **Camera Sensor Effectiveness Index** (scatter plot)
+  * **False Positive Discrepancy Margin** (deviation chart)
+  * **GDPR Compliance Index Curves** (area chart)
+  * **Anonymized Entity Flow Rate** (Sankey diagram)
+
+#### Page 11: System Simulation Sandbox
+* **URL**: `/simulator`
+* **Purpose**: Sandbox environment to compare and predict privacy score outcomes based on policy changes.
+* **Left Parameter Input Panel**:
+  * Camera Count (1-10000 slider)
+  * Retention Days (1-3650 slider)
+  * Identity Storage (Boolean toggle)
+  * System Sensitivity (1-100 slider)
+  * Threat Density (1-100 slider)
+  * **Action**: `Run Simulation` button triggers `POST /api/v1/simulator/run`.
+* **Right Result Comparison Panel**:
+  * Sim Output: Privacy, Safety, Trust, False Positives, and Bias indexes.
+  * **Comparison Graph**: SVG area chart contrasting Traditional CCTV models vs. BlindWatch AI.
+
+#### Page 12: Reports Archival Hub
+* **URL**: `/reports`
+* **Table**:
+  * Columns: `Report Name`, `Type` (PDF/CSV), `Generated By`, `Date Created`, `Actions`.
+* **Action Triggers**:
+  * **Download**: Sourced via file attachments.
+  * **Share**: Triggers copy to clipboard or internal notification share.
+  * **Delete**: Soft deletes the report entry.
+
+#### Page 13: Settings & Workspace Customization
+* **URL**: `/settings`
+* **Workspace Tabs**:
+  * **General Settings**: System variables, localized timezone parameters, and branding.
+  * **Security Governance**: Multi-Factor Authentication enforcement rules and encryption schema settings.
+  * **Retention Policies**: Configure automatic TTL durations for video logs and telemetry database records.
+  * **Notification Rules**: Channel mappings (Email, Slack, SMS alerts).
+  * **API Access Keys**: Generate and rotate API credentials.
+  * **User Management Tab** (Admin Only): User administration table.
+
+#### Page 14: User Profile & Security Configuration
+* **URL**: `/profile`
+* **Content Sections**:
+  * Personal Details edit form.
+  * Active Role & Assigned Permission Keys (e.g. `camera.read`, `identity.reveal`).
+  * Activity Log History list.
+  * Change Password form & MFA onboarding configuration.
+
+#### Page 15: Public Architecture & Product Landing Page
+* **URL**: `/`
+* **Sleek Dark Theme Sections**:
+  * Hero component with particle background animations.
+  * Problem statement (identity theft & privacy degradation in public video monitoring).
+  * BlindWatch Solution overview.
+  * Interactive Technical Architecture flow.
+  * Live Interactive Demo showing blurring shields in action.
+  * Dynamic Privacy-vs-Security comparison slider.
+  * Pricing tables & contact capture form.
+
+### Global Workspace Components
+These components reside globally inside the main layout frame:
+1. **Notification Center Drawer**: Real-time alerts feed.
+2. **Universal Search Bar**: Search matching records for camera, alert, or audit transaction IDs.
+3. **Role Switcher Dropdown (Admin Only)**: Switch current workspace role to Admin, Auditor, or Officer to mock access logs.
+4. **Theme Toggle**: Switch between Dark theme and Ultra-dark theme presets.
+5. **Activity Log Feed Bar**: Real-time text ticker listing incoming API Gateway queries.
+6. **Help Assistant Widget**: Inline chatbot assistant.
+
+
