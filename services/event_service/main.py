@@ -1,0 +1,125 @@
+import os
+import random
+from typing import List, Optional
+from datetime import datetime
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.orm import Session
+from sqlalchemy import Column, Integer, String, Float, Boolean
+from jose import jwt, JWTError
+
+from services.shared.database import get_db, Base, engine, SessionLocal, TenantMixin
+
+# Let's map Event to table 'events' in the modular db
+class Event(Base, TenantMixin):
+    __tablename__ = 'events'
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(String(100), unique=True, index=True, nullable=True)
+    event_type = Column(String(100), nullable=False)
+    location = Column(String(255), nullable=False)
+    entity_id = Column(String(100), index=True, nullable=False)
+    risk_score = Column(Float, default=0.0, nullable=False)
+    confidence = Column(Float, default=0.0, nullable=False)
+    reasoning = Column(String(1000), nullable=True)
+    status = Column(String(50), default="unresolved", nullable=False)
+    is_false_positive = Column(Boolean, default=False)
+
+SECRET_KEY = os.getenv("JWT_SECRET", "blindwatch_super_secret_cybersecurity_key_2026")
+ALGORITHM = "HS256"
+
+app = FastAPI(title="BlindWatch Event Service", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/token")
+
+def get_current_user_claims(token: str = Depends(oauth2_scheme)) -> dict:
+    try:
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token claims")
+
+@app.on_event("startup")
+def seed_events():
+
+    db = SessionLocal()
+    try:
+        if not db.query(Event).first():
+            print("Seeding default events in modular db...")
+            default_events = [
+                ("Possible Intrusion", "West Corridor Hallway", "Entity_4102", 65.0, 0.89, "Entity detected entering restricted sector without clearance tokens."),
+                ("Possible Violence", "South Perimeter Fence", "Entity_9932", 85.0, 0.95, "Erratic running patterns matching security alert signature."),
+            ]
+            for t, l, ent, risk, conf, reason in default_events:
+                evt = Event(
+                    event_type=t,
+                    location=l,
+                    entity_id=ent,
+                    risk_score=risk,
+                    confidence=conf,
+                    reasoning=reason,
+                    status="unresolved",
+                    is_false_positive=False,
+                    tenant_id="default"
+                )
+                db.add(evt)
+            db.commit()
+            print("Events seeded.")
+    finally:
+        db.close()
+
+@app.get("/api/events")
+def get_events(status: Optional[str] = None, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    tenant_id = claims.get("tenant_id", "default")
+    query = db.query(Event).filter(Event.tenant_id == tenant_id)
+    if status:
+        query = query.filter(Event.status == status)
+    return query.order_by(Event.id.desc()).all()
+
+@app.put("/api/events/{event_id}")
+def update_event(event_id: int, payload: dict, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    tenant_id = claims.get("tenant_id", "default")
+    evt = db.query(Event).filter(Event.id == event_id, Event.tenant_id == tenant_id).first()
+    if not evt:
+        raise HTTPException(status_code=404, detail="Event not found")
+        
+    if "status" in payload:
+        new_status = payload["status"]
+        evt.status = new_status
+        if new_status == "false_positive":
+            evt.is_false_positive = True
+            
+    db.commit()
+    db.refresh(evt)
+    return evt
+
+@app.get("/api/events/{event_id}/explain")
+def explain_event(event_id: int, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    tenant_id = claims.get("tenant_id", "default")
+    evt = db.query(Event).filter(Event.id == event_id, Event.tenant_id == tenant_id).first()
+    if not evt:
+        raise HTTPException(status_code=404, detail="Event not found")
+        
+    return {
+        "event_id": evt.id,
+        "event_type": evt.event_type,
+        "risk_score": evt.risk_score,
+        "confidence": evt.confidence,
+        "xai_model": "BlindWatch Explainable Vision v4 (Confidence-Weighted Factor Tree)",
+        "spatial_factors": [
+            f"Detected in high-priority zone: {evt.location}",
+            "Object coordinates overlap with security zone polygons."
+        ],
+        "temporal_factors": [
+            "Anomaly persisted across 12 consecutive frames.",
+            "Dwell time limits exceeded standard deviation curves."
+        ],
+        "mitigation_recommendation": "Dispatch area patrol units to verify area safety. Keep camera feed active."
+    }

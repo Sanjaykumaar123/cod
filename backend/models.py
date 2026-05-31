@@ -113,6 +113,8 @@ class AuditLog(Base):
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
     outcome = Column(String, nullable=False) # success, denied, failed
     ip_address = Column(String, nullable=True)
+    hash = Column(String, nullable=True)
+    previous_hash = Column(String, nullable=True)
 
 class PrivacyMetric(Base):
     __tablename__ = "privacy_metrics"

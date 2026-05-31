@@ -386,6 +386,33 @@ def get_audit_logs(
     """
     return db.query(models.AuditLog).order_by(models.AuditLog.timestamp.desc()).all()
 
+@app.post("/api/audit-logs/verify")
+def verify_audit_ledger(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(RoleChecker(["admin", "auditor"]))
+):
+    """
+    Validates the cryptographic integrity of the audit logs chain.
+    """
+    is_valid = AuditEngine.verify_ledger_integrity(db)
+    
+    # Log the verification action itself
+    AuditEngine.log_action(
+        db=db,
+        action="AUDIT_LEDGER_VERIFIED",
+        reason=f"Cryptographic integrity audit conducted by {current_user.username}. Integrity status: {is_valid}",
+        outcome="success" if is_valid else "failed",
+        user_id=current_user.id,
+        username=current_user.username,
+        role=current_user.role
+    )
+    
+    return {
+        "integrity_verified": is_valid,
+        "algorithm": "SHA-256 Hash Chain",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
 
 # --- PRIVACY CENTER ENDPOINTS ---
 

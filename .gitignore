@@ -43,3 +43,14 @@ next-env.d.ts
 # database
 *.db
 *.sqlite
+*-wal
+*-shm
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.pytest_cache/
