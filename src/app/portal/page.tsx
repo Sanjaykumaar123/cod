@@ -221,20 +221,31 @@ export default function PortalPage() {
 
       if (res.ok) {
         const data = await res.json();
-        const loggedUser = { username: data.username, role: data.role.toLowerCase(), full_name: data.full_name };
-        
+        // Decode JWT payload to get role/username if API doesn't return them
+        let jwtRole = "viewer";
+        let jwtSub = usernameInput;
+        try {
+          const jwtPayload = JSON.parse(atob(data.access_token.split(".")[1]));
+          jwtRole = (jwtPayload.role || "viewer").toLowerCase();
+          jwtSub  = jwtPayload.sub || usernameInput;
+        } catch {}
+
+        const loggedUser = {
+          username:  data.username  || jwtSub,
+          role:      (data.role     || jwtRole).toLowerCase(),
+          full_name: data.full_name || data.username || jwtSub,
+        };
+
         localStorage.setItem("bw_token", data.access_token);
         localStorage.setItem("bw_user", JSON.stringify(loggedUser));
-        
         setToken(data.access_token);
         setUser(loggedUser);
-        
         fetchAllData(data.access_token);
       } else {
         const errData = await res.json();
         setAuthError(errData.detail || "Authentication failed. Verify credentials.");
       }
-    } catch (e) {
+    } catch {
       setAuthError("Failed to connect to surveillance daemon. Is server online?");
     } finally {
       setIsLoggingIn(false);
@@ -256,7 +267,20 @@ export default function PortalPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        const loggedUser = { username: data.username, role: data.role.toLowerCase(), full_name: data.full_name };
+        // Decode JWT payload as fallback for role/username
+        let jwtRole = role;
+        let jwtSub  = role;
+        try {
+          const jwtPayload = JSON.parse(atob(data.access_token.split(".")[1]));
+          jwtRole = (jwtPayload.role || role).toLowerCase();
+          jwtSub  = jwtPayload.sub  || role;
+        } catch {}
+
+        const loggedUser = {
+          username:  data.username  || jwtSub,
+          role:      (data.role     || jwtRole).toLowerCase(),
+          full_name: data.full_name || data.username || role,
+        };
         localStorage.setItem("bw_token", data.access_token);
         localStorage.setItem("bw_user", JSON.stringify(loggedUser));
         setToken(data.access_token);

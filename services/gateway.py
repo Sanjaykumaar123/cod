@@ -10,7 +10,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -76,6 +76,11 @@ async def route_request(request: Request, path: str):
             # Prevent duplicate content-length header mismatches
             if "content-length" in headers_to_forward:
                 del headers_to_forward["content-length"]
+            
+            # Strip downstream CORS headers to let the Gateway CORSMiddleware handle it exclusively
+            cors_headers = [k for k in headers_to_forward.keys() if k.lower().startswith("access-control-")]
+            for k in cors_headers:
+                del headers_to_forward[k]
                 
             return Response(
                 content=response.content,
