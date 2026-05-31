@@ -104,6 +104,32 @@ def trigger_security_incident(background_tasks: BackgroundTasks):
     background_tasks.add_task(run_incident)
     return {"status": "incident_started", "message": "Executive Demo sequence initiated. Events are generating."}
 
+@app.get("/api/v1/debug-token")
+def debug_token(token: str):
+    from services.auth_service.main import SECRET_KEY as auth_secret
+    from services.camera_service.main import SECRET_KEY as cam_secret
+    from jose import jwt, JWTError
+    
+    auth_decode = "Failed"
+    cam_decode = "Failed"
+    try:
+        auth_decode = jwt.decode(token, auth_secret, algorithms=["HS256"])
+    except Exception as e:
+        auth_decode = str(e)
+        
+    try:
+        cam_decode = jwt.decode(token, cam_secret, algorithms=["HS256"])
+    except Exception as e:
+        cam_decode = str(e)
+        
+    return {
+        "auth_secret_preview": auth_secret[:5] + "...",
+        "cam_secret_preview": cam_secret[:5] + "...",
+        "secrets_match": auth_secret == cam_secret,
+        "auth_decode": auth_decode,
+        "cam_decode": cam_decode
+    }
+
 # Entrypoint for uvicorn
 if __name__ == "__main__":
     import uvicorn
