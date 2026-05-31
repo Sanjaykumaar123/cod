@@ -25,6 +25,7 @@ export default function PortalPage() {
   const [passwordInput, setPasswordInput] = useState("");
   const [authError, setAuthError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true); // true while checking stored session
 
   // Navigation state
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -69,14 +70,21 @@ export default function PortalPage() {
   const [liveCoords, setLiveCoords] = useState<{ x: number; y: number; speed: number; id: string; risk: number; anonymized: boolean } | null>(null);
   const [isLiveStreaming, setIsLiveStreaming] = useState(false);
 
-  // Initialize and check localStorage
+  // Initialize and check localStorage session
   useEffect(() => {
     const savedToken = localStorage.getItem("bw_token");
-    const savedUser = localStorage.getItem("bw_user");
+    const savedUser  = localStorage.getItem("bw_user");
     if (savedToken && savedUser) {
-      setToken(savedToken);
-      setUser(JSON.parse(savedUser));
+      try {
+        const parsedUser = JSON.parse(savedUser);
+        setToken(savedToken);
+        setUser(parsedUser);
+      } catch {
+        localStorage.removeItem("bw_token");
+        localStorage.removeItem("bw_user");
+      }
     }
+    setIsInitializing(false);
   }, []);
 
   // Fetch core telemetry data on load/login
@@ -233,9 +241,36 @@ export default function PortalPage() {
     }
   };
 
-  const selectDemoRole = (role: string) => {
+  // Quick-login: fill credentials AND auto-submit
+  const selectDemoRole = async (role: string) => {
+    const password = `${role}123`;
     setUsernameInput(role);
-    setPasswordInput(`${role}123`);
+    setPasswordInput(password);
+    setAuthError("");
+    setIsLoggingIn(true);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: role, password })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const loggedUser = { username: data.username, role: data.role.toLowerCase(), full_name: data.full_name };
+        localStorage.setItem("bw_token", data.access_token);
+        localStorage.setItem("bw_user", JSON.stringify(loggedUser));
+        setToken(data.access_token);
+        setUser(loggedUser);
+        fetchAllData(data.access_token);
+      } else {
+        const errData = await res.json();
+        setAuthError(errData.detail || "Authentication failed.");
+      }
+    } catch {
+      setAuthError("Cannot reach surveillance daemon. Is server online?");
+    } finally {
+      setIsLoggingIn(false);
+    }
   };
 
   const handleLogout = () => {
@@ -569,7 +604,17 @@ export default function PortalPage() {
     }
   };
 
-  // Loading Screen
+  // Show blank splash while restoring session from localStorage
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen grid-bg flex flex-col justify-center items-center">
+        <Shield className="w-10 h-10 text-accent-cyan animate-pulse" />
+        <p className="text-xs text-gray-500 mt-4 uppercase tracking-widest">Initializing OS Gate...</p>
+      </div>
+    );
+  }
+
+  // Show login form when no valid session
   if (!token) {
     return (
       <div className="min-h-screen grid-bg flex flex-col justify-center items-center px-4 relative">
@@ -636,25 +681,27 @@ export default function PortalPage() {
           </form>
 
           <div className="mt-8 border-t border-glass-border pt-6">
-            <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 text-center">Demo Quick-Role Ingestion</span>
+            <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 text-center">One-Click Demo Login</span>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { name: "Admin", role: "admin", color: "hover:border-cyan-500/40 hover:bg-cyan-950/20" },
-                { name: "Auditor", role: "auditor", color: "hover:border-emerald-500/40 hover:bg-emerald-950/20" },
-                { name: "Security Lead", role: "officer", color: "hover:border-amber-500/40 hover:bg-amber-950/20" },
-                { name: "Viewer Node", role: "viewer", color: "hover:border-slate-500/40 hover:bg-slate-950/20" }
+                { name: "Admin",         role: "admin",   color: "hover:border-cyan-500/40 hover:bg-cyan-950/20",    dot: "bg-cyan-400" },
+                { name: "Auditor",       role: "auditor", color: "hover:border-emerald-500/40 hover:bg-emerald-950/20", dot: "bg-emerald-400" },
+                { name: "Security Lead", role: "officer", color: "hover:border-amber-500/40 hover:bg-amber-950/20",  dot: "bg-amber-400" },
+                { name: "Viewer Node",   role: "viewer",  color: "hover:border-slate-500/40 hover:bg-slate-950/20",  dot: "bg-slate-400" }
               ].map(roleBtn => (
                 <button
                   key={roleBtn.role}
+                  disabled={isLoggingIn}
                   onClick={() => selectDemoRole(roleBtn.role)}
-                  className={`bg-gray-900/40 border border-glass-border rounded-md py-2 px-3 text-xs text-gray-300 font-medium transition-all ${roleBtn.color}`}
+                  className={`bg-gray-900/40 border border-glass-border rounded-md py-2.5 px-3 text-xs text-gray-300 font-medium transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${roleBtn.color}`}
                 >
-                  {roleBtn.name}
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${roleBtn.dot}`} />
+                  {isLoggingIn && usernameInput === roleBtn.role ? "Connecting..." : roleBtn.name}
                 </button>
               ))}
             </div>
             <div className="mt-3 text-center">
-              <span className="text-[10px] text-gray-500">Auto-filled passwords match roles: e.g., <code>admin123</code></span>
+              <span className="text-[10px] text-gray-500">Click any role to instantly log in</span>
             </div>
           </div>
         </motion.div>
