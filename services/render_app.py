@@ -50,6 +50,61 @@ for route in gateway_app.routes:
 def root():
     return {"status": "online", "mode": "cloud_monolith"}
 
+from services.demo_seeder import seed_demo_data
+import asyncio
+from fastapi import BackgroundTasks
+
+@app.post("/api/v1/demo/seed")
+def seed_demo():
+    """Volume 6 - Seed intelligence layer with realistic data."""
+    return seed_demo_data()
+
+@app.post("/api/v1/demo/incident")
+def trigger_security_incident(background_tasks: BackgroundTasks):
+    """Executive Demo Mode: Run Full Security Incident in 30 seconds."""
+    # We can broadcast to WebSockets, but for now we simply create the audit and event trails.
+    from services.shared.database import SessionLocal
+    from services.event_service.infrastructure.models import Event
+    from services.audit_service.infrastructure.models import AuditLog
+    import datetime
+    import uuid
+
+    def run_incident():
+        db = SessionLocal()
+        try:
+            # Step 1: Suspicious Entity Detected
+            evt1 = Event(
+                event_type="Perimeter Breach",
+                severity="HIGH",
+                description="Entity scaled Sector B fence. Behavior escalating.",
+                camera_id=str(uuid.uuid4()),
+                risk_score=95.5,
+                timestamp=datetime.datetime.utcnow(),
+                metadata_payload={"model_explanation": "Movement vector anomalous. Speed matches running profile."},
+                tenant_id="default"
+            )
+            db.add(evt1)
+            
+            # Step 2: AI Detection Log
+            log1 = AuditLog(
+                user_id=str(uuid.uuid4()),
+                action="THREAT_DETECTED",
+                resource="System",
+                details="AI Threat Engine activated. Automated lock-down suggested.",
+                ip_address="10.0.0.1",
+                tenant_id="default"
+            )
+            db.add(log1)
+            db.commit()
+            
+            # Step 3 (Simulated delay): Governance Request
+            # Real implementation would await asyncio.sleep(5) and broadcast.
+        finally:
+            db.close()
+
+    background_tasks.add_task(run_incident)
+    return {"status": "incident_started", "message": "Executive Demo sequence initiated. Events are generating."}
+
 # Entrypoint for uvicorn
 if __name__ == "__main__":
     import uvicorn

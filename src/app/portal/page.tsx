@@ -642,6 +642,39 @@ export default function PortalPage() {
     }
   };
 
+  // Volume 6 Demo Handlers
+  const handleDemoSeed = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_URL}/api/v1/demo/seed`, { 
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        alert("Volume 6 Intelligence Layer Seeded! Please refresh the page to see 50 entities, cameras, and historical events.");
+        fetchAllData(token);
+      }
+    } catch (e) {
+      console.error("Failed to seed demo data", e);
+    }
+  };
+
+  const handleDemoIncident = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_URL}/api/v1/demo/incident`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        alert("Executive Demo Sequence Initiated. A full security incident (breach, detection, AI analysis, audit logs) is generating now in the background.");
+        setTimeout(() => fetchAllData(token), 3000);
+      }
+    } catch (e) {
+      console.error("Failed to trigger demo incident", e);
+    }
+  };
+
   // Show blank splash while restoring session from localStorage
   if (isInitializing) {
     return (
@@ -967,18 +1000,12 @@ export default function PortalPage() {
                   {/* Operational Controls */}
                   <div className="glass-panel p-6 rounded-lg border border-glass-border">
                     <h4 className="text-sm font-bold tracking-wider text-white uppercase mb-4">Command Actions Vault</h4>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                       <button 
                         onClick={() => setActiveTab("monitoring")}
                         className="bg-gray-900/60 hover:bg-cyan-950/20 border border-glass-border hover:border-cyan-500/30 text-gray-300 py-3 rounded-md text-xs font-semibold transition-all cursor-pointer text-center"
                       >
                         Launch Camera Node Feeds
-                      </button>
-                      <button 
-                        onClick={() => setActiveTab("privacy")}
-                        className="bg-gray-900/60 hover:bg-emerald-950/20 border border-glass-border hover:border-emerald-500/30 text-gray-300 py-3 rounded-md text-xs font-semibold transition-all cursor-pointer text-center"
-                      >
-                        Review GDPR Privacy Shields
                       </button>
                       <button 
                         onClick={() => setActiveTab("simulator")}
@@ -991,6 +1018,20 @@ export default function PortalPage() {
                         className="bg-gray-900/60 hover:bg-slate-900/60 border border-glass-border hover:border-white/30 text-gray-300 py-3 rounded-md text-xs font-semibold transition-all cursor-pointer text-center"
                       >
                         Compile Security Audit Summary
+                      </button>
+                      
+                      {/* Volume 6 Executive Demo Mode Buttons */}
+                      <button 
+                        onClick={handleDemoSeed}
+                        className="bg-indigo-950/30 hover:bg-indigo-900/50 border border-indigo-900/50 hover:border-indigo-400 text-indigo-300 py-3 rounded-md text-xs font-bold tracking-wider uppercase transition-all cursor-pointer text-center col-span-1 md:col-span-1"
+                      >
+                        Populate Demo Data
+                      </button>
+                      <button 
+                        onClick={handleDemoIncident}
+                        className="bg-rose-950/30 hover:bg-rose-900/50 border border-rose-900/50 hover:border-rose-400 text-rose-300 py-3 rounded-md text-xs font-bold tracking-wider uppercase transition-all cursor-pointer text-center col-span-2 md:col-span-2"
+                      >
+                        Run Full Security Incident (Demo)
                       </button>
                     </div>
                   </div>
