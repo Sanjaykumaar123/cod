@@ -12,9 +12,9 @@ from jose import jwt, JWTError
 from services.shared.database import get_db, Base, engine, SessionLocal, TenantMixin
 from services.camera_service.infrastructure.models import Camera
 from services.identity_governance_service.infrastructure.models import IdentityRequest
-from services.event_service.main import Event
-from services.privacy_service.main import PrivacyMetric
-from services.vision_service.main import AnonymousEntity
+from services.event_service.infrastructure.models import Event
+from services.privacy_service.infrastructure.models import PrivacyMetric
+from services.vision_service.infrastructure.models import AnonymousEntity
 
 SECRET_KEY = os.getenv("JWT_SECRET", "blindwatch_super_secret_cybersecurity_key_2026")
 ALGORITHM = "HS256"
@@ -42,7 +42,7 @@ def get_analytics(db: Session = Depends(get_db), claims: dict = Depends(get_curr
     tenant_id = claims.get("tenant_id", "default")
     
     # Active Cameras
-    active_cameras = db.query(Camera).filter(Camera.tenant_id == tenant_id, Camera.is_active == True).count()
+    active_cameras = db.query(Camera).filter(Camera.tenant_id == tenant_id, Camera.status == "active").count()
     total_cameras = db.query(Camera).filter(Camera.tenant_id == tenant_id).count()
     
     # Active Anonymous Entities
@@ -82,7 +82,7 @@ def get_analytics(db: Session = Depends(get_db), claims: dict = Depends(get_curr
     locations = ["Entrance", "Lobby", "Perimeter", "Corridor", "Restricted Zone"]
     high_risk_areas = []
     for loc in locations:
-        cnt = db.query(Event).filter(Event.tenant_id == tenant_id, Event.location == loc).count()
+        cnt = db.query(Event).join(Camera, Event.camera_id == Camera.id).filter(Event.tenant_id == tenant_id, Camera.location == loc).count()
         high_risk_areas.append({"location": loc, "event_count": cnt})
     high_risk_areas.sort(key=lambda x: x["event_count"], reverse=True)
     

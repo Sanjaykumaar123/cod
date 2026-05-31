@@ -11,24 +11,7 @@ from jose import jwt, JWTError
 
 from services.shared.database import get_db, Base, engine, SessionLocal, TenantMixin
 
-# Map SimulationResult to table 'simulation_results' in the modular db
-class SimulationResult(Base, TenantMixin):
-    __tablename__ = 'simulation_results'
-    
-    id = Column(Integer, primary_key=True, index=True)
-    config_name = Column(String(100), nullable=False)
-    cameras_count = Column(Integer, nullable=False)
-    retention_days = Column(Integer, nullable=False)
-    sensitivity = Column(Float, nullable=False)
-    identity_collection = Column(String(100), nullable=False)
-    crowd_density = Column(String(50), nullable=False)
-    threat_level = Column(String(50), nullable=False)
-    
-    traditional_safety_score = Column(Float, default=70.0)
-    blindwatch_safety_score = Column(Float, default=95.0)
-    traditional_privacy_score = Column(Float, default=20.0)
-    blindwatch_privacy_score = Column(Float, default=98.0)
-    recommendations = Column(String(1000), nullable=True)
+from services.simulator_service.infrastructure.models import SimulationResult
 
 SECRET_KEY = os.getenv("JWT_SECRET", "blindwatch_super_secret_cybersecurity_key_2026")
 ALGORITHM = "HS256"

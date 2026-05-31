@@ -1,10 +1,10 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, JSON
-from services.shared.database import Base, TenantMixin
+from sqlalchemy import Column, String, Float, DateTime, Text, Integer
+from services.shared.database import Base, BaseMixin, GUID
+import datetime
 
-class PrivacyMetric(Base, TenantMixin):
+class PrivacyMetric(Base, BaseMixin):
     __tablename__ = "privacy_metrics"
     
-    id = Column(Integer, primary_key=True, index=True)
     privacy_score = Column(Float, default=100.0)
     compliance_score = Column(Float, default=100.0)
     transparency_score = Column(Float, default=100.0)
@@ -14,29 +14,26 @@ class PrivacyMetric(Base, TenantMixin):
     requests_denied = Column(Integer, default=0)
     requests_approved = Column(Integer, default=0)
 
-class PrivacyScore(Base, TenantMixin):
+class PrivacyScore(Base, BaseMixin):
     __tablename__ = 'privacy_scores'
 
-    id = Column(Integer, primary_key=True, index=True)
-    score_value = Column(Float, default=100.0, nullable=False)
-    exposure_risk = Column(String(50), default="Low", nullable=False)
-    dynamic_anonymization_rate = Column(Float, default=100.0, nullable=False)
-    timestamp = Column(String(100), nullable=False)
+    privacy_score = Column(Float, default=100.0, nullable=False)
+    identity_storage_penalty = Column(Float, default=0.0, nullable=False)
+    retention_penalty = Column(Float, default=0.0, nullable=False)
+    sharing_penalty = Column(Float, default=0.0, nullable=False)
+    tracking_penalty = Column(Float, default=0.0, nullable=False)
+    calculated_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
 
-class ComplianceRule(Base, TenantMixin):
+class ComplianceRule(Base, BaseMixin):
     __tablename__ = 'compliance_rules'
 
-    id = Column(Integer, primary_key=True, index=True)
-    rule_code = Column(String(100), unique=True, index=True, nullable=False)
-    regulation_name = Column(String(255), nullable=False)
-    is_enforced = Column(Boolean, default=True, nullable=False)
-    settings_meta = Column(JSON, nullable=True)
+    rule_name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    severity = Column(String(20), default="medium", nullable=False)
 
-class PrivacyEvent(Base, TenantMixin):
-    __tablename__ = 'privacy_events'
+class ExposureRisk(Base, BaseMixin):
+    __tablename__ = 'exposure_risks'
 
-    id = Column(Integer, primary_key=True, index=True)
-    event_type = Column(String(100), nullable=False)
-    description = Column(String(500), nullable=False)
-    severity = Column(String(50), default="Low", nullable=False)
-    timestamp = Column(String(100), nullable=False)
+    risk_type = Column(String(100), nullable=False)
+    risk_score = Column(Float, default=0.0, nullable=False)
+    recommendation = Column(Text, nullable=True)

@@ -228,3 +228,174 @@ The design strictly enforces: **Identity Is A Privileged Resource, Not Standard 
 * Standard tracking datasets only ever reference the hashed `entity_id` (e.g. `Entity_2B8C`).
 * The biological details (name, SSN, or clearance) are stored in an encrypted block.
 * Keys are sharded as XOR shares across Admin and Auditor accounts. Decryption is only possible during an active, dual-signed lease window.
+
+---
+
+## 10. Volume 2: Complete Database Design (PostgreSQL)
+
+This section outlines the production-ready PostgreSQL relational schema layout designed for high scalability (up to 10,000 cameras and 1 million daily events).
+
+### Database Rules
+* **Primary Keys**: Every table uses a globally unique `UUID` as its primary identifier.
+* **Audit Columns**: Every table contains `created_at TIMESTAMP` and `updated_at TIMESTAMP` tracking fields.
+* **Multi-Tenancy**: Every table is partitioned or filtered via a required `tenant_id UUID` column.
+* **Soft Delete**: Critical operational directories (`users`, `cameras`, `events`, `identity_requests`, `anonymous_entities`) include `is_deleted BOOLEAN` fields.
+
+```mermaid
+erDiagram
+    users {
+        uuid id PK
+        uuid tenant_id
+        varchar email UNIQUE
+        varchar username
+        text password_hash
+        varchar full_name
+        varchar phone
+        uuid role_id FK
+        varchar status
+        boolean mfa_enabled
+        timestamp last_login
+        timestamp created_at
+        timestamp updated_at
+        boolean is_deleted
+    }
+    roles {
+        uuid id PK
+        varchar name
+        text description
+        timestamp created_at
+    }
+    permissions {
+        uuid id PK
+        varchar permission_key UNIQUE
+        text description
+        timestamp created_at
+    }
+    role_permissions {
+        uuid id PK
+        uuid role_id FK
+        uuid permission_id FK
+    }
+    cameras {
+        uuid id PK
+        uuid tenant_id
+        varchar name
+        varchar location
+        varchar camera_type
+        text stream_url
+        varchar status
+        float health_score
+        timestamp last_heartbeat
+        timestamp created_at
+        timestamp updated_at
+        boolean is_deleted
+    }
+    anonymous_entities {
+        uuid id PK
+        uuid tenant_id
+        text entity_hash UNIQUE
+        timestamp first_seen
+        timestamp last_seen
+        uuid camera_id FK
+        varchar status
+        float behavior_score
+        float risk_score
+        timestamp created_at
+        timestamp updated_at
+        boolean is_deleted
+    }
+    events {
+        uuid id PK
+        uuid tenant_id
+        varchar event_type
+        uuid camera_id FK
+        uuid entity_id FK
+        float risk_score
+        float confidence
+        varchar severity
+        varchar status
+        timestamp created_at
+        timestamp updated_at
+        boolean is_deleted
+    }
+    identity_requests {
+        uuid id PK
+        uuid tenant_id
+        uuid event_id FK
+        uuid requester_id FK
+        text justification
+        varchar case_number
+        varchar status
+        timestamp requested_at
+        timestamp created_at
+        timestamp updated_at
+        boolean is_deleted
+    }
+    
+    users ||--o{ identity_requests : "requests"
+    roles ||--o{ users : "assigns"
+    roles ||--|{ role_permissions : "contains"
+    permissions ||--|{ role_permissions : "granted-to"
+    cameras ||--o{ anonymous_entities : "detects"
+    anonymous_entities ||--o{ events : "generates"
+    events ||--o{ identity_requests : "escalates"
+```
+
+### Table Definitions
+
+#### 1. Identity & Role Governance
+* **`users`**: Main user catalog. Soft delete enabled.
+* **`roles`**: System roles (e.g. `admin`, `auditor`, `officer`, `viewer`).
+* **`permissions`**: Access key descriptors (e.g., `camera.read`, `identity.reveal`).
+* **`role_permissions`**: Joins roles to specific permission keys.
+
+#### 2. Surveillance & Camera Nodes
+* **`cameras`**: Camera catalog (type options: `WEBCAM`, `RTSP`, `VIDEO_UPLOAD`). Soft delete enabled.
+* **`camera_groups`**: Organizational groups of cameras.
+* **`camera_group_members`**: Mapping table linking cameras to groups.
+
+#### 3. Vision tracking & Detections
+* **`anonymous_entities`**: Subject directory. Zero identity data stored. Soft delete enabled.
+* **`behavior_signatures`**: Detailed movement and behavior telemetry signatures in JSONB format.
+* **`detections`**: Raw YOLO bounding-box telemetry.
+
+#### 4. Anomaly & Event Processing
+* **`events`**: Alerts list (type options: `THEFT`, `INTRUSION`, `WEAPON`, `FIRE`, `PANIC`, `VIOLENCE`, `MEDICAL`). Soft delete enabled.
+* **`event_timelines`**: Historical frame step tracking for events.
+* **`event_evidence`**: Files containing evidence (image, video, report).
+* **`event_explanations`**: Explainable AI weights and textual decision tree reasons.
+
+#### 5. Privacy Intelligence
+* **`privacy_scores`**: Calculated compliance metrics over time.
+* **`compliance_rules`**: Legal or policy constraint parameters.
+* **`exposure_risks`**: Flagged vulnerabilities and privacy leakage alerts.
+
+#### 6. Identity Decryption Governance
+* **`identity_requests`**: Petitions for temporary identity decryptions. Soft delete enabled.
+* **`approvals`**: Multi-signature decision blocks.
+* **`identity_reveal_sessions`**: Reveal lease windows and temporary decryptions.
+
+#### 7. Audit & Logs
+* **`audit_logs`**: System audit logs ledger.
+
+#### 8. Analytics & Reporting
+* **`analytics_snapshots`**: Aggregated day snapshots.
+* **`threat_trends`**: Trend statistics.
+* **`reports`**: Compilation PDF/CSV files list. Soft delete enabled.
+
+#### 9. Simulator Sandbox
+* **`simulation_runs`**: Sandbox runs metadata.
+* **`simulation_results`**: Comparative performance indicators.
+
+#### 10. Alerts & Notifications
+* **`notifications`**: Live alert banners push notifications.
+
+### Performance Database Indexes
+```sql
+CREATE INDEX idx_events_created_at ON events(created_at DESC);
+CREATE INDEX idx_events_event_type ON events(event_type);
+CREATE INDEX idx_anon_entity_hash ON anonymous_entities(entity_hash);
+CREATE INDEX idx_audit_timestamp ON audit_logs(timestamp DESC);
+CREATE INDEX idx_ident_req_status ON identity_requests(status);
+CREATE INDEX idx_priv_score_calc ON privacy_scores(calculated_at DESC);
+```

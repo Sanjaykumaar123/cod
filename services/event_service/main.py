@@ -11,19 +11,7 @@ from jose import jwt, JWTError
 
 from services.shared.database import get_db, Base, engine, SessionLocal, TenantMixin
 
-# Let's map Event to table 'events' in the modular db
-class Event(Base, TenantMixin):
-    __tablename__ = 'events'
-    id = Column(Integer, primary_key=True, index=True)
-    event_id = Column(String(100), unique=True, index=True, nullable=True)
-    event_type = Column(String(100), nullable=False)
-    location = Column(String(255), nullable=False)
-    entity_id = Column(String(100), index=True, nullable=False)
-    risk_score = Column(Float, default=0.0, nullable=False)
-    confidence = Column(Float, default=0.0, nullable=False)
-    reasoning = Column(String(1000), nullable=True)
-    status = Column(String(50), default="unresolved", nullable=False)
-    is_false_positive = Column(Boolean, default=False)
+from services.event_service.infrastructure.models import Event
 
 SECRET_KEY = os.getenv("JWT_SECRET", "blindwatch_super_secret_cybersecurity_key_2026")
 ALGORITHM = "HS256"
