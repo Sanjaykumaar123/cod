@@ -415,6 +415,35 @@ export default function PortalPage() {
     }
   };
 
+  // Verify Cryptographic Ledger Integrity
+  const [ledgerVerification, setLedgerVerification] = useState<{ verified: boolean; checked: boolean; isChecking: boolean } | null>(null);
+
+  const handleVerifyLedger = async () => {
+    if (!token) return;
+    setLedgerVerification({ verified: false, checked: false, isChecking: true });
+    try {
+      const headers = { "Authorization": `Bearer ${token}` };
+      const res = await fetch(`${API_URL}/api/audit-logs/verify`, {
+        method: "POST",
+        headers
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLedgerVerification({
+          verified: data.integrity_verified,
+          checked: true,
+          isChecking: false
+        });
+      } else {
+        alert("Failed to verify audit trail ledger.");
+        setLedgerVerification(null);
+      }
+    } catch (err) {
+      console.error(err);
+      setLedgerVerification(null);
+    }
+  };
+
   // Simulator Run
   const handleRunSimulation = async () => {
     if (!token) return;
@@ -1436,6 +1465,34 @@ export default function PortalPage() {
                 <div className="glass-panel p-6 rounded-lg border border-glass-border">
                   <div className="flex justify-between items-center mb-6">
                     <h4 className="text-sm font-bold tracking-wider text-white uppercase">System Auditing Logs</h4>
+                    <div className="flex items-center gap-4">
+                      {ledgerVerification && ledgerVerification.checked && (
+                        <span className={`text-[10px] font-bold px-2.5 py-1.5 rounded border ${
+                          ledgerVerification.verified 
+                            ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' 
+                            : 'bg-rose-950/40 border-rose-800 text-rose-300 animate-pulse'
+                        }`}>
+                          {ledgerVerification.verified ? "✓ LEDGER INTEGRITY VERIFIED (SHA-256 HASH CHAIN INTEGRAL)" : "⚠ WARNING: LEDGER TAMPERING DETECTED!"}
+                        </span>
+                      )}
+                      <button
+                        onClick={handleVerifyLedger}
+                        disabled={ledgerVerification?.isChecking}
+                        className="bg-accent-cyan hover:bg-cyan-400 disabled:bg-cyan-950/20 text-black text-[10px] font-bold px-3 py-1.5 rounded transition-all cursor-pointer flex items-center gap-1.5 shadow-[0_0_10px_rgba(6,182,212,0.15)]"
+                      >
+                        {ledgerVerification?.isChecking ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>Validating...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-3 h-3" />
+                            <span>Verify Ledger Integrity</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                     <span className="text-[10px] text-gray-500">SECURE CRYPTOGRAPHIC LEDGER - IMMUTABLE</span>
                   </div>
                   <div className="overflow-x-auto">
