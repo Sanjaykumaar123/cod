@@ -102,6 +102,29 @@ def startup_seed():
     finally:
         db.close()
 
+from pydantic import BaseModel
+
+class LoginPayload(BaseModel):
+    email: Optional[str] = None
+    username: Optional[str] = None
+    password: str
+
+class UserCreatePayload(BaseModel):
+    username: str
+    email: str
+    password: str
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    role_name: Optional[str] = "viewer"
+
+class UserUpdatePayload(BaseModel):
+    email: Optional[str] = None
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    role_name: Optional[str] = None
+    status: Optional[str] = None
+
 @app.post("/api/auth/token")
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == form_data.username).first()
@@ -111,9 +134,8 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    role_name = user.roles[0].name if user.roles else "viewer"
-    token = create_access_token(data={"sub": user.username, "role": role_name, "tenant_id": user.tenant_id})
+    role_name = user.roles[0].name.upper() if user.roles else "VIEWER"
+    token = create_access_token(data={"sub": user.username, "role": role_name, "tenant_id": str(user.tenant_id)})
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -122,8 +144,139 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         "full_name": user.full_name
     }
 
-@app.get("/api/users/me")
-def read_users_me(current_user: User = Depends(get_current_user)):
+@app.post("/api/v1/auth/login")
+def login_v1(payload: LoginPayload, db: Session = Depends(get_db)):
+    user = None
+    if payload.email:
+        user = db.query(User).filter(User.email == payload.email).first()
+    if not user and payload.username:
+        user = db.query(User).filter(User.username == payload.username).first()
+    if not user and payload.email:
+        user = db.query(User).filter(User.username == payload.email).first()
+        
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Incorrect email/username or password")
+        
+    role_name = user.roles[0].name.upper() if user.roles else "VIEWER"
+    token = create_access_token(data={"sub": user.username, "role": role_name, "tenant_id": str(user.tenant_id)})
+    
+    from services.shared.database import log_audit_event
+    log_audit_event(db, user.id, user.tenant_id, "user.login", "User", user.id, f"User {user.username} logged in successfully.")
+    
+    return {
+        "access_token": token,
+        "refresh_token": token,
+        "role": role_name
+    }
+
+@app.post("/api/v1/auth/refresh")
+def refresh_v1(claims: User = Depends(get_current_user)):
+    role_name = claims.roles[0].name.upper() if claims.roles else "VIEWER"
+    token = create_access_token(data={"sub": claims.username, "role": role_name, "tenant_id": str(claims.tenant_id)})
+    return {
+        "access_token": token,
+        "refresh_token": token,
+        "role": role_name
+    }
+
+@app.post("/api/v1/auth/logout")
+def logout_v1(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from services.shared.database import log_audit_event
+    log_audit_event(db, current_user.id, current_user.tenant_id, "user.logout", "User", current_user.id, f"User {current_user.username} logged out.")
+    return {"status": "success", "message": "Logged out successfully"}
+
+@app.get("/api/v1/users")
+def get_users_v1(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    role_name = current_user.roles[0].name.upper() if current_user.roles else "VIEWER"
+    if role_name != "ADMIN":
+        raise HTTPException(status_code=403, detail="Permission denied: Admins only")
+    return db.query(User).filter(User.is_deleted == False).all()
+
+@app.post("/api/v1/users")
+def create_user_v1(payload: UserCreatePayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    role_name_curr = current_user.roles[0].name.upper() if current_user.roles else "VIEWER"
+    if role_name_curr != "ADMIN":
+        raise HTTPException(status_code=403, detail="Permission denied: Admins only")
+        
+    role_obj = db.query(Role).filter(Role.name == payload.role_name.lower()).first()
+    if not role_obj:
+        role_obj = Role(name=payload.role_name.lower(), description="Custom role", tenant_id=current_user.tenant_id)
+        db.add(role_obj)
+        db.commit()
+        db.refresh(role_obj)
+        
+    new_user = User(
+        username=payload.username,
+        email=payload.email,
+        password_hash=get_password_hash(payload.password),
+        full_name=payload.full_name,
+        phone=payload.phone,
+        role_id=role_obj.id,
+        status="active",
+        tenant_id=current_user.tenant_id
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    from services.shared.database import log_audit_event
+    log_audit_event(db, current_user.id, current_user.tenant_id, "user.create", "User", new_user.id, f"Created new user {new_user.username}")
+    
+    return new_user
+
+@app.put("/api/v1/users/{id}")
+def update_user_v1(id: str, payload: UserUpdatePayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    role_name_curr = current_user.roles[0].name.upper() if current_user.roles else "VIEWER"
+    if role_name_curr != "ADMIN":
+        raise HTTPException(status_code=403, detail="Permission denied: Admins only")
+        
+    user = db.query(User).filter(User.id == id, User.is_deleted == False).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    if payload.email:
+        user.email = payload.email
+    if payload.username:
+        user.username = payload.username
+    if payload.full_name:
+        user.full_name = payload.full_name
+    if payload.phone:
+        user.phone = payload.phone
+    if payload.status:
+        user.status = payload.status
+    if payload.role_name:
+        role_obj = db.query(Role).filter(Role.name == payload.role_name.lower()).first()
+        if role_obj:
+            user.role_id = role_obj.id
+            
+    db.commit()
+    db.refresh(user)
+    
+    from services.shared.database import log_audit_event
+    log_audit_event(db, current_user.id, current_user.tenant_id, "user.update", "User", user.id, f"Updated user parameters for {user.username}")
+    
+    return user
+
+@app.delete("/api/v1/users/{id}")
+def delete_user_v1(id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    role_name_curr = current_user.roles[0].name.upper() if current_user.roles else "VIEWER"
+    if role_name_curr != "ADMIN":
+        raise HTTPException(status_code=403, detail="Permission denied: Admins only")
+        
+    user = db.query(User).filter(User.id == id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    user.is_deleted = True
+    db.commit()
+    
+    from services.shared.database import log_audit_event
+    log_audit_event(db, current_user.id, current_user.tenant_id, "user.delete", "User", user.id, f"Soft deleted user {user.username}")
+    
+    return {"status": "success", "message": f"User {user.username} soft deleted successfully."}
+
+@app.get("/api/v1/users/me")
+def read_users_me_v1(current_user: User = Depends(get_current_user)):
     role_name = current_user.roles[0].name if current_user.roles else "viewer"
     return {
         "id": current_user.id,

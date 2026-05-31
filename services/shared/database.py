@@ -83,3 +83,54 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def log_audit_event(db, user_id, tenant_id, action, target_type, target_id, reason, result="success", ip_address="127.0.0.1"):
+    try:
+        audit_table = Base.metadata.tables.get('audit_logs')
+        if audit_table is not None:
+            import uuid
+            import datetime
+            # Handle string UUIDs
+            parsed_tenant_id = tenant_id
+            if isinstance(tenant_id, str):
+                try:
+                    parsed_tenant_id = uuid.UUID(tenant_id)
+                except ValueError:
+                    parsed_tenant_id = uuid.uuid4()
+            elif not tenant_id:
+                parsed_tenant_id = uuid.uuid4()
+
+            parsed_user_id = user_id
+            if isinstance(user_id, str):
+                try:
+                    parsed_user_id = uuid.UUID(user_id)
+                except ValueError:
+                    parsed_user_id = None
+
+            parsed_target_id = target_id
+            if isinstance(target_id, str):
+                try:
+                    parsed_target_id = uuid.UUID(target_id)
+                except ValueError:
+                    parsed_target_id = None
+
+            db.execute(
+                audit_table.insert().values(
+                    id=uuid.uuid4(),
+                    tenant_id=parsed_tenant_id,
+                    user_id=parsed_user_id,
+                    action=action,
+                    target_type=target_type,
+                    target_id=parsed_target_id,
+                    reason=reason,
+                    result=result,
+                    ip_address=ip_address,
+                    timestamp=datetime.datetime.utcnow(),
+                    created_at=datetime.datetime.utcnow(),
+                    updated_at=datetime.datetime.utcnow()
+                )
+            )
+            db.commit()
+    except Exception as e:
+        print(f"Failed to log audit event dynamically: {e}")
+

@@ -45,68 +45,103 @@ def get_current_user_claims(token: str = Depends(oauth2_scheme)) -> dict:
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-@app.get("/api/entities")
-def get_entities(status: Optional[str] = None, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
-    tenant_id = claims.get("tenant_id", "default")
-    query = db.query(AnonymousEntity).filter(AnonymousEntity.tenant_id == tenant_id)
-    if status:
-        query = query.filter(AnonymousEntity.status == status)
-    return query.order_by(AnonymousEntity.id.desc()).all()
+import asyncio
+from fastapi import WebSocket, WebSocketDisconnect
 
-@app.get("/api/entities/{entity_id}/tracks")
-def get_entity_tracks(entity_id: str, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+@app.get("/api/v1/entities")
+def get_entities_v1(db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
     tenant_id = claims.get("tenant_id", "default")
-    tracks = db.query(EntityTrack).filter(EntityTrack.entity_id == entity_id, EntityTrack.tenant_id == tenant_id).all()
-    # Format to match frontend expected response
+    entities = db.query(AnonymousEntity).filter(AnonymousEntity.tenant_id == tenant_id).all()
     return [
         {
-            "id": t.id,
-            "entity_id": t.entity_id,
-            "timestamp": t.last_seen,
-            "location_x": t.coordinate_path[0]["x"] if t.coordinate_path else 100,
-            "location_y": t.coordinate_path[0]["y"] if t.coordinate_path else 200,
-            "zone": t.last_seen,
-            "risk_score": 5.0,
-            "speed": t.current_speed
+            "id": str(ent.id),
+            "entity_id": ent.entity_id or f"ENT_{str(ent.id)[:4].upper()}",
+            "risk_score": ent.risk_score,
+            "status": ent.status,
+            "last_location": ent.last_location,
+            "behavior_signature": ent.behavior_signature or "normal_gait"
         }
-        for t in tracks
+        for ent in entities
     ]
 
-@app.get("/api/entities/{entity_id}/identity")
-def get_entity_identity(entity_id: str, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+@app.get("/api/v1/entities/{id}")
+def get_entity_v1(id: str, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
     tenant_id = claims.get("tenant_id", "default")
-    # Check if active request is approved
-    req = db.query(IdentityRequest).filter(
-        IdentityRequest.entity_id == entity_id,
-        IdentityRequest.tenant_id == tenant_id,
-        IdentityRequest.status == "approved"
+    # Search by UUID or custom entity_id string
+    ent = db.query(AnonymousEntity).filter(
+        (AnonymousEntity.id == id) | (AnonymousEntity.entity_id == id),
+        AnonymousEntity.tenant_id == tenant_id
     ).first()
     
-    if req:
-        # Check dual signatures
-        if req.approved_by_admin and req.approved_by_auditor:
-            # Reconstruct XOR secret share in modular database
-            # For modular sandbox, return decrypted_identity or seed value
-            decrypted = req.decrypted_identity or "Biometric Match: Sanjay Kumaar (Auditor ID: 902)"
-            return {
-                "permitted": True,
-                "decrypted_identity": decrypted,
-                "expires_in_seconds": 900
-            }
-            
+    if not ent:
+        raise HTTPException(status_code=404, detail="Entity not found")
+        
+    tracks = db.query(EntityTrack).filter(EntityTrack.entity_id == ent.entity_id, EntityTrack.tenant_id == tenant_id).all()
+    movement_history = []
+    for t in tracks:
+        movement_history.append({
+            "timestamp": str(t.updated_at),
+            "location": t.last_seen,
+            "coordinates": t.coordinate_path,
+            "speed": t.current_speed
+        })
+        
     return {
-        "permitted": False,
-        "decrypted_identity": "Access Denied: Requires Active Approved Dual-Key Lease."
+        "id": str(ent.id),
+        "entity_id": ent.entity_id,
+        "risk_score": ent.risk_score,
+        "behavior_profile": {
+            "signature": ent.behavior_signature or "normal_walking",
+            "pace": "standard",
+            "risk_class": "low" if ent.risk_score < 40 else ("medium" if ent.risk_score < 75 else "high")
+        },
+        "movement_history": movement_history,
+        "risk_history": [
+            {"timestamp": str(ent.created_at), "score": ent.risk_score}
+        ]
     }
 
+@app.get("/api/v1/live-feed/{camera_id}")
+def get_live_feed_v1(camera_id: str, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    tenant_id = claims.get("tenant_id", "default")
+    return {
+        "camera_id": camera_id,
+        "frame": "data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        "entities": [
+            {"entity_id": "ENT_8842", "bbox": [100, 150, 80, 200], "risk_score": 12.0}
+        ]
+    }
+
+@app.websocket("/ws/live-feed/{camera_id}")
+async def ws_live_feed_v1(websocket: WebSocket, camera_id: str):
+    await websocket.accept()
+    try:
+        while True:
+            await websocket.send_json({
+                "frame": "data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                "entities": [
+                    {
+                        "entity_id": "ENT_A93F",
+                        "x": random.randint(100, 800),
+                        "y": random.randint(100, 600),
+                        "risk_score": random.randint(10, 80)
+                    }
+                ]
+            })
+            await asyncio.sleep(0.5)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+
+# Keep local processing route for compatibility
 @app.post("/api/cameras/{camera_id}/feed")
-def process_feed(camera_id: int, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+def process_feed(camera_id: str, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
     tenant_id = claims.get("tenant_id", "default")
     camera = db.query(Camera).filter(Camera.id == camera_id, Camera.tenant_id == tenant_id).first()
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
         
-    # Query or create an entity for this location
     entity = db.query(AnonymousEntity).filter(
         AnonymousEntity.last_location == camera.location,
         AnonymousEntity.status == "active",
@@ -114,9 +149,9 @@ def process_feed(camera_id: int, db: Session = Depends(get_db), claims: dict = D
     ).first()
     
     if not entity:
-        entity_id = f"Entity_{random.randint(1000, 9999)}"
+        entity_id_str = f"Entity_{random.randint(1000, 9999)}"
         entity = AnonymousEntity(
-            entity_id=entity_id,
+            entity_id=entity_id_str,
             last_location=camera.location,
             risk_score=5.0,
             status="active",
@@ -129,9 +164,7 @@ def process_feed(camera_id: int, db: Session = Depends(get_db), claims: dict = D
     x = random.randint(150, 850)
     y = random.randint(150, 650)
     speed = round(random.uniform(0.5, 4.2), 2)
-    risk_score = 5.0
     
-    # Store track coordinate path
     track = db.query(EntityTrack).filter(EntityTrack.entity_id == entity.entity_id, EntityTrack.tenant_id == tenant_id).first()
     if not track:
         track = EntityTrack(
@@ -151,7 +184,6 @@ def process_feed(camera_id: int, db: Session = Depends(get_db), claims: dict = D
         track.current_speed = speed
         track.last_seen = camera.location
         
-    # Anomaly simulation (occasional events)
     event_created = None
     roll = random.random()
     if roll > 0.93:
@@ -186,9 +218,19 @@ def process_feed(camera_id: int, db: Session = Depends(get_db), claims: dict = D
             "behavior_sig": entity.behavior_signature or "walking_paced"
         },
         "event_triggered": {
-            "id": event_created.id,
+            "id": str(event_created.id),
             "type": event_created.event_type,
             "risk": event_created.risk_score,
             "reason": event_created.reasoning
         } if event_created else None
     }
+
+@app.get("/api/entities/{entity_id}/tracks")
+def get_entity_tracks_compat(entity_id: str, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    return get_entity_tracks(entity_id, db, claims)
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "healthy", "service": "vision_service"}
+
+

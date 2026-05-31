@@ -63,51 +63,120 @@ def seed_events():
     finally:
         db.close()
 
-@app.get("/api/events")
-def get_events(status: Optional[str] = None, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+@app.get("/api/v1/events")
+def get_events_v1(status: Optional[str] = None, severity: Optional[str] = None, event_type: Optional[str] = None, date: Optional[str] = None, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
     tenant_id = claims.get("tenant_id", "default")
-    query = db.query(Event).filter(Event.tenant_id == tenant_id)
+    query = db.query(Event).filter(Event.tenant_id == tenant_id, Event.is_deleted == False)
     if status:
         query = query.filter(Event.status == status)
-    return query.order_by(Event.id.desc()).all()
+    if severity:
+        query = query.filter(Event.severity == severity)
+    if event_type:
+        query = query.filter(Event.event_type == event_type)
+    return query.order_by(Event.created_at.desc()).all()
 
-@app.put("/api/events/{event_id}")
-def update_event(event_id: int, payload: dict, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+@app.get("/api/v1/events/{id}")
+def get_event_v1(id: str, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
     tenant_id = claims.get("tenant_id", "default")
-    evt = db.query(Event).filter(Event.id == event_id, Event.tenant_id == tenant_id).first()
+    evt = db.query(Event).filter(Event.id == id, Event.tenant_id == tenant_id).first()
+    if not evt:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return evt
+
+@app.post("/api/v1/events/{id}/escalate")
+def escalate_event_v1(id: str, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    tenant_id = claims.get("tenant_id", "default")
+    user_id = claims.get("user_id")
+    evt = db.query(Event).filter(Event.id == id, Event.tenant_id == tenant_id).first()
     if not evt:
         raise HTTPException(status_code=404, detail="Event not found")
         
-    if "status" in payload:
-        new_status = payload["status"]
-        evt.status = new_status
-        if new_status == "false_positive":
-            evt.is_false_positive = True
-            
+    evt.status = "ESCALATED"
     db.commit()
     db.refresh(evt)
-    return evt
+    
+    from services.shared.database import log_audit_event
+    log_audit_event(db, user_id, tenant_id, "event.escalate", "Event", evt.id, f"Escalated event {evt.id} to active security queue.")
+    
+    return {"status": "success", "message": f"Event {evt.id} escalated successfully.", "event": evt}
 
-@app.get("/api/events/{event_id}/explain")
-def explain_event(event_id: int, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+@app.post("/api/v1/events/{id}/dismiss")
+def dismiss_event_v1(id: str, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
     tenant_id = claims.get("tenant_id", "default")
-    evt = db.query(Event).filter(Event.id == event_id, Event.tenant_id == tenant_id).first()
+    user_id = claims.get("user_id")
+    evt = db.query(Event).filter(Event.id == id, Event.tenant_id == tenant_id).first()
+    if not evt:
+        raise HTTPException(status_code=404, detail="Event not found")
+        
+    evt.status = "DISMISSED"
+    evt.is_false_positive = True
+    db.commit()
+    db.refresh(evt)
+    
+    from services.shared.database import log_audit_event
+    log_audit_event(db, user_id, tenant_id, "event.dismiss", "Event", evt.id, f"Dismissed event {evt.id} as false positive.")
+    
+    return {"status": "success", "message": f"Event {evt.id} dismissed.", "event": evt}
+
+@app.get("/api/v1/events/{id}/evidence")
+def get_event_evidence_v1(id: str, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    tenant_id = claims.get("tenant_id", "default")
+    evt = db.query(Event).filter(Event.id == id, Event.tenant_id == tenant_id).first()
     if not evt:
         raise HTTPException(status_code=404, detail="Event not found")
         
     return {
-        "event_id": evt.id,
-        "event_type": evt.event_type,
-        "risk_score": evt.risk_score,
-        "confidence": evt.confidence,
-        "xai_model": "BlindWatch Explainable Vision v4 (Confidence-Weighted Factor Tree)",
-        "spatial_factors": [
-            f"Detected in high-priority zone: {evt.location}",
-            "Object coordinates overlap with security zone polygons."
-        ],
-        "temporal_factors": [
-            "Anomaly persisted across 12 consecutive frames.",
-            "Dwell time limits exceeded standard deviation curves."
-        ],
-        "mitigation_recommendation": "Dispatch area patrol units to verify area safety. Keep camera feed active."
+        "event_id": str(evt.id),
+        "evidence": [
+            {
+                "id": f"EVID_{str(evt.id)[:4].upper()}",
+                "type": "IMAGE",
+                "file_url": "https://images.unsplash.com/photo-1557597774-9d273605dfa9?auto=format&fit=crop&w=800&q=80",
+                "thumbnail_url": "https://images.unsplash.com/photo-1557597774-9d273605dfa9?auto=format&fit=crop&w=200&q=80"
+            }
+        ]
     }
+
+@app.get("/api/v1/evidence/{id}/download")
+def download_evidence_v1(id: str, claims: dict = Depends(get_current_user_claims)):
+    return {
+        "id": id,
+        "download_url": "https://images.unsplash.com/photo-1557597774-9d273605dfa9?auto=format&fit=crop&w=800&q=80",
+        "mime_type": "image/jpeg"
+    }
+
+@app.get("/api/v1/events/{id}/explanation")
+def explain_event_v1(id: str, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    tenant_id = claims.get("tenant_id", "default")
+    evt = db.query(Event).filter(Event.id == id, Event.tenant_id == tenant_id).first()
+    if not evt:
+        raise HTTPException(status_code=404, detail="Event not found")
+        
+    return {
+        "event_id": str(evt.id),
+        "reasons": [
+            {"reason": "Restricted Zone Entry", "weight": 42},
+            {"reason": "Movement Pace Abnormality", "weight": 25},
+            {"reason": "Low Visibility Sector", "weight": 12}
+        ]
+    }
+
+# Keep legacy routes for backward compatibility
+@app.get("/api/events")
+def get_events(status: Optional[str] = None, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    return get_events_v1(status, None, None, None, db, claims)
+
+@app.put("/api/events/{event_id}")
+def update_event(event_id: str, payload: dict, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    if payload.get("status") == "false_positive":
+        return dismiss_event_v1(event_id, db, claims)
+    return escalate_event_v1(event_id, db, claims)
+
+@app.get("/api/events/{event_id}/explain")
+def explain_event(event_id: str, db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    return explain_event_v1(event_id, db, claims)
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "healthy", "service": "event_service"}
+

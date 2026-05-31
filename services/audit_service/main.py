@@ -95,32 +95,18 @@ def seed_audit_logs():
     finally:
         db.close()
 
-@app.get("/api/audit-logs")
-def get_audit_logs(db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
-    if claims.get("role") not in ["admin", "auditor"]:
+@app.get("/api/v1/audit/logs")
+def get_audit_logs_v1(db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    role = claims.get("role", "").upper()
+    if role not in ["ADMIN", "AUDITOR"]:
          raise HTTPException(status_code=403, detail="Unprivileged access denied to system audit trail.")
     tenant_id = claims.get("tenant_id", "default")
-    return db.query(AuditLog).filter(AuditLog.tenant_id == tenant_id).order_by(AuditLog.id.desc()).all()
+    return db.query(AuditLog).filter(AuditLog.tenant_id == tenant_id).order_by(AuditLog.created_at.desc()).all()
 
-@app.post("/api/audit-logs/log")
-def create_audit_log_entry(payload: dict, db: Session = Depends(get_db)):
-    # Local REST interface for internal microservice logging
-    log = insert_log(
-        db=db,
-        action=payload.get("action"),
-        reason=payload.get("reason"),
-        outcome=payload.get("outcome", "success"),
-        user_id=payload.get("user_id"),
-        username=payload.get("username", "system"),
-        role=payload.get("role", "system"),
-        tenant_id=payload.get("tenant_id", "default"),
-        ip=payload.get("ip_address", "127.0.0.1")
-    )
-    return {"status": "logged", "id": log.id, "hash": log.hash}
-
-@app.post("/api/audit-logs/verify")
-def verify_audit_ledger(db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
-    if claims.get("role") not in ["admin", "auditor"]:
+@app.post("/api/v1/audit/verify")
+def verify_audit_ledger_v1(db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    role = claims.get("role", "").upper()
+    if role not in ["ADMIN", "AUDITOR"]:
         raise HTTPException(status_code=403, detail="Unprivileged access denied.")
     tenant_id = claims.get("tenant_id", "default")
     
@@ -130,18 +116,15 @@ def verify_audit_ledger(db: Session = Depends(get_db), claims: dict = Depends(ge
     expected_prev = "GENESIS_BLOCK"
     
     for log in logs:
-        # Check link
         if log.previous_hash != expected_prev:
             is_valid = False
             break
-        # Recalculate hash
         computed = calculate_log_hash(log)
         if log.hash != computed:
             is_valid = False
             break
         expected_prev = log.hash
         
-    # Log the verification action itself
     insert_log(
         db=db,
         action="AUDIT_LEDGER_VERIFIED",
@@ -158,3 +141,32 @@ def verify_audit_ledger(db: Session = Depends(get_db), claims: dict = Depends(ge
         "algorithm": "SHA-256 Hash Chain",
         "timestamp": datetime.utcnow().isoformat()
     }
+
+# Keep legacy routes for compatibility
+@app.get("/api/audit-logs")
+def get_audit_logs(db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    return get_audit_logs_v1(db, claims)
+
+@app.post("/api/audit-logs/log")
+def create_audit_log_entry(payload: dict, db: Session = Depends(get_db)):
+    log = insert_log(
+        db=db,
+        action=payload.get("action"),
+        reason=payload.get("reason"),
+        outcome=payload.get("outcome", "success"),
+        user_id=payload.get("user_id"),
+        username=payload.get("username", "system"),
+        role=payload.get("role", "system"),
+        tenant_id=payload.get("tenant_id", "default"),
+        ip=payload.get("ip_address", "127.0.0.1")
+    )
+    return {"status": "logged", "id": str(log.id), "hash": log.hash}
+
+@app.post("/api/audit-logs/verify")
+def verify_audit_ledger(db: Session = Depends(get_db), claims: dict = Depends(get_current_user_claims)):
+    return verify_audit_ledger_v1(db, claims)
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "healthy", "service": "audit_service"}
+

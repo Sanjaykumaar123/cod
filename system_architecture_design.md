@@ -399,3 +399,108 @@ CREATE INDEX idx_audit_timestamp ON audit_logs(timestamp DESC);
 CREATE INDEX idx_ident_req_status ON identity_requests(status);
 CREATE INDEX idx_priv_score_calc ON privacy_scores(calculated_at DESC);
 ```
+
+---
+
+## 11. Volume 3: Complete REST API Specification + Button Mappings
+
+This section details the REST API endpoints and direct user interface button mappings across the BlindWatch modular microservices, adhering strictly to versioned paths, audit logging, and role-based policies.
+
+### API Gateway / Routing Rules
+* Prefix format: `/api/v1/`
+* Security: Validated JWT + Role Permissions.
+* Audit Trails: Write operations automatically log to `audit_logs` before returning the HTTP response.
+
+### 1. Authentication & Security Endpoints
+* **`POST /api/v1/auth/login`**: Authenticate credentials, log session, and issue JWT token.
+  * **Button Mapping**: `Login` Button
+* **`POST /api/v1/auth/refresh`**: Refresh expired JWT token using the refresh token.
+* **`POST /api/v1/auth/logout`**: Terminate session, invalidate JWT, and record audit log.
+
+### 2. User Management Endpoints (Admin Only)
+* **`GET /api/v1/users`**: List all users within the tenant.
+* **`POST /api/v1/users`**: Create a new tenant user. Records audit log.
+* **`PUT /api/v1/users/{id}`**: Update user details.
+* **`DELETE /api/v1/users/{id}`**: Soft-delete a user record (`is_deleted = true`).
+
+### 3. Camera Node Governance Endpoints
+* **`POST /api/v1/cameras`**: Register a new camera node. Launches corresponding vision track job.
+  * **Button Mapping**: `Add Camera` Button
+* **`GET /api/v1/cameras`**: Fetch all cameras for the current tenant.
+* **`GET /api/v1/cameras/{id}`**: Fetch details of a single camera.
+* **`PUT /api/v1/cameras/{id}`**: Edit stream configuration or settings.
+* **`DELETE /api/v1/cameras/{id}`**: Delete camera node.
+* **`POST /api/v1/cameras/{id}/test`**: Validate RTSP connection status.
+  * **Button Mapping**: `Test Connection` Button
+
+### 4. Live Vision Feeds
+* **`GET /api/v1/live-feed/{camera_id}`**: Restructure stream frames for HTTP stream preview.
+* **`WS /ws/live-feed/{camera_id}`**: Push real-time base64 frame stream and bounding-box telemetries.
+  * **Button Mapping**: `Pause Feed` / `Resume Feed` / `Fullscreen Feed` (handled frontend-side)
+
+### 5. Entity Surveillance Profiles
+* **`GET /api/v1/entities`**: List tracked anonymous entities and current risk ratings.
+* **`GET /api/v1/entities/{id}`**: Fetch behavior metrics, movement path history, and risk trends.
+
+### 6. Threat Event Lifecycle
+* **`GET /api/v1/events`**: Fetch anomaly alerts. Filters: `status`, `severity`, `event_type`, `date`.
+* **`GET /api/v1/events/{id}`**: Fetch full event parameters.
+* **`POST /api/v1/events/{id}/escalate`**: Move event into active supervisor escalation queues.
+  * **Button Mapping**: `Escalate` Button
+* **`POST /api/v1/events/{id}/dismiss`**: Set event status to `DISMISSED` (false positive).
+  * **Button Mapping**: `Dismiss` Button
+
+### 7. AI Explanations & Evidence
+* **`GET /api/v1/events/{id}/evidence`**: Retrieve evidentiary frame snapshots or short video loops.
+  * **Button Mapping**: `View Evidence` Button
+* **`GET /api/v1/evidence/{id}/download`**: Direct download link to original evidence attachment file.
+* **`GET /api/v1/events/{id}/explanation`**: Fetch XAI decision rationale and weights.
+  * **Button Mapping**: `Explain Decision` Button
+
+### 8. Privacy Dashboards & Audits
+* **`GET /api/v1/privacy/dashboard`**: Fetch compliance posture score and active data leaks status.
+* **`POST /api/v1/privacy/assessment`**: Trigger dynamic GDPR/CCPA automated rules check.
+  * **Button Mapping**: `Run Assessment` Button
+* **`GET /api/v1/privacy/exposure-risks`**: Fetch list of currently flagged tracking risks.
+* **`GET /api/v1/privacy/compliance`**: Query active regulation constraints config.
+
+### 9. Identity Reveal Approval Workflows
+* **`POST /api/v1/identity-requests`**: File request for temporary zero-knowledge key decryption.
+  * **Button Mapping**: `Request Identity` Button
+* **`GET /api/v1/identity-requests`**: Retrieve current reveal petitions history.
+* **`POST /api/v1/identity-requests/{id}/auditor-approve`**: Record first-signature approval.
+  * **Button Mapping**: `Approve` (Auditor Screen) Button
+* **`POST /api/v1/identity-requests/{id}/auditor-reject`**: Record auditor rejection.
+* **`POST /api/v1/identity-requests/{id}/admin-approve`**: Record second-signature approval.
+
+### 10. Audit Trails & Logs Ledger
+* **`GET /api/v1/audit/logs`**: Query ledger database logs. Filters: `user`, `action`, `date`.
+* **`GET /api/v1/audit/logs/{id}`**: View detailed payload block of single audit transaction.
+
+### 11. Dashboard Analytics & Trends
+* **`GET /api/v1/analytics/dashboard`**: Consolidated metrics.
+* **`GET /api/v1/analytics/threat-trends`**: Chronological trend mappings.
+* **`GET /api/v1/analytics/camera-effectiveness`**: Camera performance comparison indexes.
+* **`GET /api/v1/analytics/privacy-trends`**: History of calculated compliance scores.
+* **`GET /api/v1/analytics/heatmaps`**: Coordinate dwell-time visual arrays.
+
+### 12. Simulator Sandbox
+* **`POST /api/v1/simulator/run`**: Trigger simulator run config.
+  * **Button Mapping**: `Run Simulation` Button
+* **`GET /api/v1/simulator/history`**: Get prior run results comparisons.
+* **`GET /api/v1/simulator/{id}`**: Retrieve full details of simulator run parameters and scores.
+
+### 13. Reports Generator
+* **`POST /api/v1/reports/generate`**: Trigger compilation PDF/CSV report generation.
+  * **Button Mapping**: `Generate Report` Button
+* **`GET /api/v1/reports/{id}/download`**: Retrieve compiled PDF report output.
+
+### 14. Real-Time Push Notifications
+* **`GET /api/v1/notifications`**: Query unread status logs.
+* **`POST /api/v1/notifications/{id}/read`**: Mark message as read.
+
+### 15. WebSocket Channels
+* **`WS /ws/dashboard`**: Broad updates.
+* **`WS /ws/alerts`**: Push urgent alerts.
+* **`WS /ws/live-feed`**: Bounding box coordinates.
+

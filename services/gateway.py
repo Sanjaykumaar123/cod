@@ -17,17 +17,20 @@ app.add_middleware(
 )
 
 SERVICES = {
-    "/api/auth": "http://127.0.0.1:8001",
-    "/api/users": "http://127.0.0.1:8001",
-    "/api/cameras": "http://127.0.0.1:8002",
-    "/api/entities": "http://127.0.0.1:8003",
-    "/api/events": "http://127.0.0.1:8005",
-    "/api/privacy-metrics": "http://127.0.0.1:8004",
-    "/api/audit-logs": "http://127.0.0.1:8006",
-    "/api/analytics": "http://127.0.0.1:8007",
-    "/api/simulator": "http://127.0.0.1:8008",
-    "/api/identity-requests": "http://127.0.0.1:8009",
-    "/api/reports": "http://127.0.0.1:8007",
+    "/api/v1/auth": "http://127.0.0.1:8001",
+    "/api/v1/users": "http://127.0.0.1:8001",
+    "/api/v1/cameras": "http://127.0.0.1:8002",
+    "/api/v1/live-feed": "http://127.0.0.1:8003",
+    "/api/v1/entities": "http://127.0.0.1:8003",
+    "/api/v1/events": "http://127.0.0.1:8005",
+    "/api/v1/evidence": "http://127.0.0.1:8005",
+    "/api/v1/privacy": "http://127.0.0.1:8004",
+    "/api/v1/identity-requests": "http://127.0.0.1:8009",
+    "/api/v1/audit": "http://127.0.0.1:8006",
+    "/api/v1/analytics": "http://127.0.0.1:8007",
+    "/api/v1/simulator": "http://127.0.0.1:8008",
+    "/api/v1/reports": "http://127.0.0.1:8007",
+    "/api/v1/notifications": "http://127.0.0.1:8001",
     "/healthz": "http://127.0.0.1:8001"
 }
 
@@ -37,14 +40,10 @@ async def route_request(request: Request, path: str):
     full_path = f"/{path}"
     target_service_url = None
     
-    # Special route override: Camera feed queries go to Vision Service
-    if full_path.startswith("/api/cameras") and full_path.endswith("/feed"):
-        target_service_url = "http://127.0.0.1:8003"
-    else:
-        for prefix, service_url in SERVICES.items():
-            if full_path.startswith(prefix):
-                target_service_url = service_url
-                break
+    for prefix, service_url in SERVICES.items():
+        if full_path.startswith(prefix):
+            target_service_url = service_url
+            break
             
     if not target_service_url:
         raise HTTPException(status_code=404, detail="Service route not resolved")
@@ -83,3 +82,79 @@ async def route_request(request: Request, path: str):
             )
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Bad Gateway (Microservice Unresponsive): {e}")
+
+import datetime
+import random
+import asyncio
+from fastapi import WebSocket, WebSocketDisconnect
+
+@app.websocket("/ws/dashboard")
+async def ws_dashboard(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            await websocket.send_json({
+                "type": "NEW_EVENT",
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "message": "Security threat signature detected at Sector C"
+            })
+            await asyncio.sleep(4.0)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+
+@app.websocket("/ws/alerts")
+async def ws_alerts(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            await websocket.send_json({
+                "severity": "HIGH",
+                "event_type": "Possible Weapon",
+                "message": "Immediate confirmation required for threat code #88B"
+            })
+            await asyncio.sleep(7.0)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+
+@app.websocket("/ws/live-feed")
+async def ws_live_feed(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            await websocket.send_json({
+                "entity": "ENT_93A7",
+                "camera": "Gate Alpha North",
+                "dwell_time": random.randint(15, 300)
+            })
+            await asyncio.sleep(3.0)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+
+@app.websocket("/ws/live-feed/{camera_id}")
+async def ws_live_feed_camera(websocket: WebSocket, camera_id: str):
+    await websocket.accept()
+    try:
+        while True:
+            await websocket.send_json({
+                "frame": "data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                "entities": [
+                    {
+                        "entity_id": "ENT_A93F",
+                        "x": random.randint(150, 750),
+                        "y": random.randint(150, 550),
+                        "risk_score": random.randint(10, 85)
+                    }
+                ]
+            })
+            await asyncio.sleep(0.5)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+
