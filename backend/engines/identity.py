@@ -12,6 +12,9 @@ class IdentityGovernanceEngine:
         "Entity_E55A": "Elena Rostova (Passport: 82019A8B) - Restricted Access Contractor"
     }
 
+    # Transient memory vault for pending key shares before they are signed/approved
+    _pending_shares = {}
+
     @staticmethod
     def create_request(
         db: Session,
@@ -23,8 +26,18 @@ class IdentityGovernanceEngine:
     ) -> IdentityRequest:
         """
         Submits a formal request to decrypt an anonymous entity's identity.
-        Requires justification and dual approvals.
+        Generates cryptographic key shares and stores them in the pending vault.
         """
+        # Map mock identity to encrypt
+        real_id = IdentityGovernanceEngine.MOCK_IDENTITIES.get(
+            entity_id, 
+            f"Unknown Subject (Ref: {entity_id[-4:]}) - Temporal Visitor Badge"
+        )
+        
+        # Cryptographic encrypt and split
+        from backend.crypto import DoubleKeyCrypto
+        ciphertext, share_auditor, share_admin = DoubleKeyCrypto.encrypt_identity(real_id)
+
         request = IdentityRequest(
             requester_id=requester_id,
             requester_name=requester_name,
@@ -34,11 +47,17 @@ class IdentityGovernanceEngine:
             status="pending",
             created_at=datetime.datetime.utcnow(),
             approved_by_auditor=False,
-            approved_by_admin=False
+            approved_by_admin=False,
+            encrypted_identity=ciphertext,
+            auditor_key_share=None,
+            admin_key_share=None
         )
         db.add(request)
         db.commit()
         db.refresh(request)
+        
+        # Store shares in the transient vault indexed by database request ID
+        IdentityGovernanceEngine._pending_shares[request.id] = (share_auditor, share_admin)
         
         # Log this governance request in the audit engine
         AuditEngine.log_action(
@@ -62,16 +81,23 @@ class IdentityGovernanceEngine:
         role: str
     ) -> IdentityRequest:
         """
-        Processes an approval. Requires Auditor AND Admin to fully unlock.
+        Processes an approval. Releases the respective cryptographic share to the DB.
+        Decrypts the identity using the combined shares once both approvals are recorded.
         """
         request = db.query(IdentityRequest).filter(IdentityRequest.id == request_id).first()
         if not request:
             return None
+
+        # Retrieve shares from vault if present (fallback to random if already removed/processed)
+        shares = IdentityGovernanceEngine._pending_shares.get(request_id, (None, None))
+        share_auditor, share_admin = shares
             
         if role == "auditor":
             request.approved_by_auditor = True
             request.approved_by_auditor_name = approver_name
             request.approved_by_auditor_id = approver_id
+            if share_auditor:
+                request.auditor_key_share = share_auditor
             AuditEngine.log_action(
                 db=db,
                 action="IDENTITY_DECRYPTION_AUDITOR_APPROVE",
@@ -85,6 +111,8 @@ class IdentityGovernanceEngine:
             request.approved_by_admin = True
             request.approved_by_admin_name = approver_name
             request.approved_by_admin_id = approver_id
+            if share_admin:
+                request.admin_key_share = share_admin
             AuditEngine.log_action(
                 db=db,
                 action="IDENTITY_DECRYPTION_ADMIN_APPROVE",
@@ -95,22 +123,31 @@ class IdentityGovernanceEngine:
                 role=role
             )
             
-        # If both approved, elevate status to approved and calculate expiration
+        # If both approved, elevate status to approved, combine shares, and decrypt
         if request.approved_by_auditor and request.approved_by_admin:
             request.status = "approved"
             request.expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=request.duration_minutes)
             
-            # Map mock identity to reveal
-            real_id = IdentityGovernanceEngine.MOCK_IDENTITIES.get(
-                request.entity_id, 
-                f"Unknown Subject (Ref: {request.entity_id[-4:]}) - Temporal Visitor Badge"
-            )
-            request.decrypted_identity = real_id
+            # Combine the Auditor and Admin shares to reconstruct the key and decrypt
+            from backend.crypto import DoubleKeyCrypto
+            if request.auditor_key_share and request.admin_key_share:
+                decrypted = DoubleKeyCrypto.decrypt_identity(
+                    request.encrypted_identity,
+                    request.auditor_key_share,
+                    request.admin_key_share
+                )
+                request.decrypted_identity = decrypted
+            else:
+                request.decrypted_identity = "[DECRYPTION ERROR: MISSING KEY SHARES]"
+            
+            # Clean up the transient vault
+            if request_id in IdentityGovernanceEngine._pending_shares:
+                del IdentityGovernanceEngine._pending_shares[request_id]
             
             AuditEngine.log_action(
                 db=db,
                 action="IDENTITY_DECRYPTION_LEASE_GRANTED",
-                reason=f"Dual-key approval complete. Leased decrypt window of {request.duration_minutes} minutes granted.",
+                reason=f"Dual-key approval complete. Cryptographic lease granted.",
                 outcome="success",
                 user_id=request.requester_id,
                 username=request.requester_name,

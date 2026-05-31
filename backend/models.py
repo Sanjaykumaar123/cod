@@ -97,6 +97,9 @@ class IdentityRequest(Base):
     
     expires_at = Column(DateTime, nullable=True)
     decrypted_identity = Column(String, nullable=True) # The identity that gets decrypted (mock name/SSN/etc)
+    encrypted_identity = Column(String, nullable=True) # The ciphertext
+    auditor_key_share = Column(String, nullable=True)  # Cryptographic share A
+    admin_key_share = Column(String, nullable=True)    # Cryptographic share B
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
