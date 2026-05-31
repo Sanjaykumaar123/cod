@@ -93,18 +93,13 @@ def seed_demo_data(tenant_id: str = "default"):
             event = Event(
                 event_type=evt_type,
                 severity="HIGH" if base_risk > 80 else "MEDIUM" if base_risk > 50 else "LOW",
-                description=f"AI Engine detected {evt_type} at {cam.location}.",
+                reasoning=f"AI Engine detected {evt_type} at {cam.location}. {explanation}",
+                location=cam.location,
                 camera_id=str(cam.id),
                 risk_score=base_risk + random.uniform(-5, 5),
-                timestamp=datetime.datetime.utcnow() - datetime.timedelta(minutes=random.randint(1, 300)),
-                metadata_payload={
-                    "detection_confidence": round(random.uniform(0.85, 0.99), 3),
-                    "bbox": [random.randint(10, 100), random.randint(10, 100), random.randint(200, 400), random.randint(200, 400)],
-                    "contributing_factors": ["Movement Profile", "Zone Access"],
-                    "model_explanation": explanation
-                },
                 tenant_id=tenant_id
             )
+            event.created_at = datetime.datetime.utcnow() - datetime.timedelta(minutes=random.randint(1, 300))
             db.add(event)
         db.commit()
 
@@ -126,8 +121,8 @@ def seed_demo_data(tenant_id: str = "default"):
             log = AuditLog(
                 user_id=admin_id,
                 action=action,
-                resource="System",
-                details=details,
+                target_type="System",
+                reason=details,
                 ip_address=f"10.0.{random.randint(1, 255)}.{random.randint(1, 255)}",
                 tenant_id=tenant_id
             )

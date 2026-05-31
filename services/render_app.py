@@ -76,21 +76,20 @@ def trigger_security_incident(background_tasks: BackgroundTasks):
             evt1 = Event(
                 event_type="Perimeter Breach",
                 severity="HIGH",
-                description="Entity scaled Sector B fence. Behavior escalating.",
+                reasoning="Entity scaled Sector B fence. Behavior escalating.",
                 camera_id=str(uuid.uuid4()),
                 risk_score=95.5,
-                timestamp=datetime.datetime.utcnow(),
-                metadata_payload={"model_explanation": "Movement vector anomalous. Speed matches running profile."},
                 tenant_id="default"
             )
+            evt1.created_at = datetime.datetime.utcnow()
             db.add(evt1)
             
             # Step 2: AI Detection Log
             log1 = AuditLog(
                 user_id=str(uuid.uuid4()),
                 action="THREAT_DETECTED",
-                resource="System",
-                details="AI Threat Engine activated. Automated lock-down suggested.",
+                target_type="System",
+                reason="AI Threat Engine activated. Automated lock-down suggested.",
                 ip_address="10.0.0.1",
                 tenant_id="default"
             )
