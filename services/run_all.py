@@ -30,10 +30,16 @@ def main():
     try:
         for name, module, port in SERVICES:
             print(f"Launching {name} on port {port}...")
+            
+            # For cloud deployment (Render/Heroku), the API Gateway must bind to 0.0.0.0 and use the provided PORT.
+            # Internal microservices can remain on 127.0.0.1
+            host = "0.0.0.0" if name == "API Gateway" else "127.0.0.1"
+            actual_port = os.environ.get("PORT", str(port)) if name == "API Gateway" else str(port)
+
             cmd = [
                 sys.executable, "-m", "uvicorn", module,
-                "--host", "127.0.0.1",
-                "--port", str(port),
+                "--host", host,
+                "--port", actual_port,
                 "--log-level", "warning"
             ]
             p = subprocess.Popen(
@@ -47,7 +53,8 @@ def main():
             time.sleep(0.5) # staggered startup
             
         print("\nAll modular microservices launched successfully!")
-        print("API Gateway entrypoint is listening on: http://127.0.0.1:8000")
+        gateway_port = os.environ.get("PORT", "8000")
+        print(f"API Gateway entrypoint is listening on: http://0.0.0.0:{gateway_port}")
         print("Press Ctrl+C to terminate all services.\n")
         
         while True:
