@@ -242,11 +242,18 @@ export default function PortalPage() {
         setUser(loggedUser);
         fetchAllData(data.access_token);
       } else {
-        const errData = await res.json();
-        setAuthError(errData.detail || "Authentication failed. Verify credentials.");
+        let errStr = "Authentication failed.";
+        try {
+          const errData = await res.json();
+          errStr = errData.detail || errStr;
+        } catch {
+          errStr = `Server returned ${res.status} ${res.statusText}. Ensure backend is running.`;
+        }
+        setAuthError(errStr);
       }
-    } catch {
-      setAuthError("Failed to connect to surveillance daemon. Is server online?");
+    } catch (e: any) {
+      console.error(e);
+      setAuthError(`Connection failed to ${API_URL}: ${e.message}. If on Vercel, ensure NEXT_PUBLIC_API_URL is set to an HTTPS URL (like ngrok) because browsers block HTTP requests from HTTPS sites.`);
     } finally {
       setIsLoggingIn(false);
     }
@@ -287,11 +294,18 @@ export default function PortalPage() {
         setUser(loggedUser);
         fetchAllData(data.access_token);
       } else {
-        const errData = await res.json();
-        setAuthError(errData.detail || "Authentication failed.");
+        let errStr = "Authentication failed.";
+        try {
+          const errData = await res.json();
+          errStr = errData.detail || errStr;
+        } catch {
+          errStr = `Server returned ${res.status} ${res.statusText}.`;
+        }
+        setAuthError(errStr);
       }
-    } catch {
-      setAuthError("Cannot reach surveillance daemon. Is server online?");
+    } catch (e: any) {
+      console.error(e);
+      setAuthError(`Connection failed to ${API_URL}: ${e.message}. If on Vercel, ensure backend is exposed via HTTPS (e.g. ngrok).`);
     } finally {
       setIsLoggingIn(false);
     }
